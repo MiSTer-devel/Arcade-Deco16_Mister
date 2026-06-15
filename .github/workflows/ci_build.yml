@@ -1,0 +1,64 @@
+name: CI Build
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Quartus 17.0.2 (Cyclone V) in a container — same toolchain the .qsf
+      # records (LAST_QUARTUS_VERSION "17.0.2"). Revision = Arcade-Deco16 (Arcade-Deco16.qpf).
+      # Tee the console so we keep the full log even when the compile fails;
+      # PIPESTATUS preserves the real quartus_sh exit code through the pipe.
+      - name: Build with Quartus 17.0.2
+        run: |
+          set -uo pipefail
+          docker run --rm \
+            -v "${{ github.workspace }}:/project" \
+            -w /project \
+            theypsilon/quartus-lite-c5:17.0.2.docker0 \
+            /opt/intelFPGA_lite/quartus/bin/quartus_sh --flow compile Arcade-Deco16 \
+            2>&1 | tee quartus_build.log
+          exit "${PIPESTATUS[0]}"
+
+      - name: Check build output
+        run: test -f output_files/Arcade-Deco16.rbf
+
+      # Show the errors inline in the job log on failure, so the cause is
+      # visible without downloading the artifact.
+      - name: Print errors on failure
+        if: failure()
+        run: |
+          echo "::group::Quartus errors"
+          grep -hE "Error|Critical Warning" quartus_build.log output_files/*.rpt 2>/dev/null | head -200 || true
+          echo "::endgroup::"
+
+      # Always keep the logs/reports (success: timing/fit review; failure: debug).
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quartus-logs
+          path: |
+            quartus_build.log
+            output_files/*.rpt
+            output_files/*.summary
+            output_files/*.smsg
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload RBF
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Arcade-Deco16-rbf
+          path: output_files/Arcade-Deco16.rbf
+          if-no-files-found: error
