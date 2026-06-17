@@ -12,8 +12,8 @@ If you don't like the idea this could be a lower quality core don't use it.
 ## Known bugs and limitations
 Of all the games on the variations of similar hardware this core for now runs only Caveman Ninja
 - Audio seems unbalanced and could use some better mixing
-- Occasionally i can see some sprite missing lines in busy scenes
-- At the end of the first level i can trigger a bug where the platform on the right of the boss does not goes down as it should.
+- ~Occasionally i can see some sprite missing lines in busy scenes~ This has been fixed
+- ~At the end of the first level i can trigger a bug where the platform on the right of the boss does not goes down as it should.~ This has been fixed
 
 ## Thanks
 Many people, knowingly or not, contributed to this work.
