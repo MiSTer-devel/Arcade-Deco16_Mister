@@ -389,7 +389,7 @@ jtframe_resync u_resync
 
 // arcade_video drives INTERNAL wires so the analog H-Size stretch can be
 // inserted at the emu output boundary (below) without any sys_top edits.
-wire        av_clk, av_ce, av_hs, av_vs, av_de;
+wire        av_ce, av_hs, av_vs, av_de;
 wire [23:0] av_rgb;
 wire [ 1:0] av_sl;
 
@@ -405,7 +405,7 @@ arcade_video #(.WIDTH(256), .DW(24)) u_arcade_video
 	.HSync              ( resync_hs       ),
 	.VSync              ( resync_vs       ),
 
-	.CLK_VIDEO          ( av_clk          ),
+	.CLK_VIDEO          (                 ),
 	.CE_PIXEL           ( av_ce           ),
 	.VGA_R              ( av_rgb[23:16]   ),
 	.VGA_G              ( av_rgb[15:8]    ),
@@ -428,29 +428,39 @@ arcade_video #(.WIDTH(256), .DW(24)) u_arcade_video
 // normalizes active-to-fit -> HDMI is unaffected. One emu output stream thus
 // yields stretched analog + clean HDMI with the framework untouched.
 //
-// pxl2_cen = clk48 divider locked to HSync. base 8 == clk48/pxl_cen with the
-// scandoubler OFF (the analog/CRT case). hsize 0 -> bypass (str_ce == av_ce).
-// With the scandoubler ON av_ce is faster, so base 8 over-stretches; treat this
-// as a CRT/direct-video feature for now. (EXPERIMENTAL: verify on hardware.)
+// Re-timed on clk96 (16x pixel) for 6.25%/step instead of 12.5%: native pixel
+// = 8 clk48 = 16 clk96 (JTFRAME_PXLCLK=6 -> 6 MHz), so base 16 is exact. clk96
+// is 2x clk48 from the same PLL (synchronous), so arcade_video's clk48-domain
+// outputs are sampled safely on clk96. base 16 assumes scandoubler OFF (the
+// analog/CRT case); with it ON av_ce is faster -> over-stretch. EXPERIMENTAL.
 wire [2:0] hsize_amt = status[34:32];
-reg        av_hs_d;
-always @(posedge clk48) av_hs_d <= av_hs;
-wire       av_hs_rise = av_hs & ~av_hs_d;
+
+// av_ce (clk48 pixel enable) -> single clk96 write pulse
+reg  av_ce_d;
+always @(posedge clk96) av_ce_d <= av_ce;
+wire av_wr = av_ce & ~av_ce_d;
+
+// HSync rising (sampled on clk96) locks the read phase per line
+reg  av_hs_d;
+always @(posedge clk96) av_hs_d <= av_hs;
+wire av_hs_rise = av_hs & ~av_hs_d;
+
+// read enable: one pulse every (16 + hsize) clk96 cycles
 reg  [4:0] hsize_div;
-wire [4:0] hsize_max  = 5'd7 + {2'd0, hsize_amt};   // base 8 (+hsize)
-always @(posedge clk48) begin
+wire [4:0] hsize_max = 5'd15 + {2'd0, hsize_amt};   // base 16 (+hsize)
+always @(posedge clk96) begin
 	if (av_hs_rise || hsize_div == hsize_max) hsize_div <= 5'd0;
 	else                                      hsize_div <= hsize_div + 5'd1;
 end
-wire              str_ce  = (hsize_amt == 3'd0) ? av_ce : (hsize_div == 5'd0);
+wire              str_ce  = (hsize_amt == 3'd0) ? av_wr : (hsize_div == 5'd0);
 wire signed [3:0] hsize_s = -$signed({1'b0, hsize_amt});  // module: 0 bypass, <0 wider
 
 wire [23:0] str_rgb;
 wire        str_hs, str_vs, str_hb, str_vb;
 analog_hsize u_analog_hsize
 (
-	.clk     ( clk48          ),
-	.pxl_cen ( av_ce          ),
+	.clk     ( clk96          ),
+	.pxl_cen ( av_wr          ),
 	.pxl2_cen( str_ce         ),
 	.hsize   ( hsize_s        ),
 	.r_in    ( av_rgb[23:16]  ),
@@ -469,7 +479,7 @@ analog_hsize u_analog_hsize
 	.vb_out  ( str_vb         )
 );
 
-assign CLK_VIDEO = av_clk;
+assign CLK_VIDEO = clk96;
 assign CE_PIXEL  = str_ce;
 assign VGA_R     = str_rgb[23:16];
 assign VGA_G     = str_rgb[15:8];
