@@ -30,7 +30,6 @@ output        VGA_F1,
 output [1:0]  VGA_SL,
 output        VGA_SCALER, // Force VGA scaler
 output        VGA_DISABLE, // analog out is off
-output  [2:0] VGA_HSIZE,  // sys_top change: analog H-Size (pixel stretch) factor, 0=off
 
 input  [11:0] HDMI_WIDTH,
 input  [11:0] HDMI_HEIGHT,

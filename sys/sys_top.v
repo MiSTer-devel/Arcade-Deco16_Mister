@@ -1398,55 +1398,6 @@ scanlines #(0) VGA_scanlines
 	.ce_out(vga_ce_sl)
 );
 
-// sys_top change start
-// Analog H-Size: stretch each source pixel by an integer factor on the ANALOG
-// DAC path only. The HDMI scaler taps vga_data_sl above (see hr_out/hg_out
-// below), so HDMI is completely unaffected. Driven by emu's VGA_HSIZE OSD value.
-wire [2:0] vga_hsize;
-wire signed [3:0] vga_hsize_s = -$signed({1'b0, vga_hsize});
-// Read-side clock enable: clk_vid / (base + hsize), reset on HSync rising edge
-// for a deterministic per-line phase (uniform stretch, no shimmering).
-// base = clk_vid / pixel clock = 48 MHz / 6 MHz = 8 (JTFRAME_PXLCLK=6), so the
-// divider max is (base-1) + hsize = 7 + hsize. Do NOT use 15 here: that assumes
-// a 16x video clock and would make +1 nearly double the image (17/8 ~= 2.1x).
-reg vga_hs_sl_d;
-always @(posedge clk_vid) vga_hs_sl_d <= vga_hs_sl;
-wire vga_hs_rise = vga_hs_sl & ~vga_hs_sl_d;
-reg  [4:0] vga_ce_div;
-wire [4:0] vga_ce_max = 5'd7 + {2'd0, vga_hsize};
-always @(posedge clk_vid) begin
-	if      (vga_hs_rise)               vga_ce_div <= 5'd0;
-	else if (vga_ce_div == vga_ce_max)  vga_ce_div <= 5'd0;
-	else                                vga_ce_div <= vga_ce_div + 5'd1;
-end
-wire vga_ce_sl2 = (vga_hsize == 3'd0) ? vga_ce_sl : (vga_ce_div == 5'd0);
-
-wire [23:0] vga_data_hs;
-wire        vga_hs_hs, vga_vs_hs, vga_hb_hs, vga_vb_hs;
-analog_hsize u_analog_hsize
-(
-	.clk     (clk_vid),
-	.pxl_cen (vga_ce_sl),
-	.pxl2_cen(vga_ce_sl2),
-	.hsize   (vga_hsize_s),
-	.r_in    (vga_data_sl[23:16]),
-	.g_in    (vga_data_sl[15:8]),
-	.b_in    (vga_data_sl[7:0]),
-	.hs_in   (vga_hs_sl),
-	.vs_in   (vga_vs_sl),
-	.hb_in   (~vga_de_sl),
-	.vb_in   (~vga_de_sl),
-	.r_out   (vga_data_hs[23:16]),
-	.g_out   (vga_data_hs[15:8]),
-	.b_out   (vga_data_hs[7:0]),
-	.hs_out  (vga_hs_hs),
-	.vs_out  (vga_vs_hs),
-	.hb_out  (vga_hb_hs),
-	.vb_out  (vga_vb_hs)
-);
-wire vga_de_hs = ~vga_hb_hs & ~vga_vb_hs;
-// sys_top change end
-
 wire [23:0] vga_data_osd;
 wire        vga_vs_osd, vga_hs_osd, vga_de_osd;
 osd vga_osd
@@ -1459,10 +1410,10 @@ osd vga_osd
 	.osd_status(osd_status),
 
 	.clk_video(clk_vid),
-	.din(vga_data_hs),    // sys_top change: H-Size stretched stream
-	.hs_in(vga_hs_hs),    // sys_top change
-	.vs_in(vga_vs_hs),    // sys_top change
-	.de_in(vga_de_hs),    // sys_top change
+	.din(vga_data_sl),
+	.hs_in(vga_hs_sl),
+	.vs_in(vga_vs_sl),
+	.de_in(vga_de_sl),
 
 	.dout(vga_data_osd),
 	.hs_out(vga_hs_osd),
@@ -1819,7 +1770,6 @@ emu emu
 	.VGA_DE(de_emu),
 	.VGA_F1(f1),
 	.VGA_SCALER(vga_force_scaler),
-	.VGA_HSIZE(vga_hsize),       // sys_top change: analog H-Size factor
 
 `ifndef MISTER_DUAL_SDRAM
 	.VGA_DISABLE(VGA_DISABLE),
