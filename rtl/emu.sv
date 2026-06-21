@@ -455,31 +455,10 @@ end
 wire              str_ce  = (hsize_amt == 3'd0) ? av_wr : (hsize_div == 5'd0);
 wire signed [3:0] hsize_s = -$signed({1'b0, hsize_amt});  // module: 0 bypass, <0 wider
 
-// ---- Center the stretch (prevents the right-edge clip) -------------------
-// The elastic FIFO is left-anchored: it grows the active rightward and clips at
-// the unchanged HSync, using only the front porch. Feed the module an HSync
-// delayed by ~half the per-line growth (G/2): this moves the FIFO resync later
-// (so the stretch also uses the BACK porch) AND shifts the image left to
-// re-center it. cninja line (jtcninja_video): active 256, HB 255..375, HS@300
-// -> front porch 45px, back porch ~45px. G/2 = 8*hsize source px = 128*hsize
-// clk96. Cap below the back porch so the writer's per-line count stays valid.
-// EXPERIMENTAL: CEN_STEP/CEN_MAX likely need trimming on the CRT.
-localparam [9:0] CEN_STEP = 10'd128;   // clk96 left-shift per H-Size step (~G/2 @ 256px active)
-localparam [9:0] CEN_MAX  = 10'd512;   // cap (~32px) to stay inside the back porch
-wire [12:0] cen_raw = hsize_amt * CEN_STEP;
-wire [9:0]  cen_dly = (cen_raw > {3'd0, CEN_MAX}) ? CEN_MAX : cen_raw[9:0];
-
-// Delay the HSync level by cen_dly clk96 cycles (both edges), HBlank unchanged.
-wire av_hs_fall = ~av_hs & av_hs_d;
-reg  [9:0] cen_rc, cen_fc;
-reg        cen_ra, cen_fa, hs_cen;
-always @(posedge clk96) begin
-	if (av_hs_rise)      begin cen_rc <= cen_dly; cen_ra <= 1'b1; end
-	else if (cen_ra)     begin if (cen_rc==10'd0) begin hs_cen <= 1'b1; cen_ra <= 1'b0; end else cen_rc <= cen_rc - 1'b1; end
-	if (av_hs_fall)      begin cen_fc <= cen_dly; cen_fa <= 1'b1; end
-	else if (cen_fa)     begin if (cen_fc==10'd0) begin hs_cen <= 1'b0; cen_fa <= 1'b0; end else cen_fc <= cen_fc - 1'b1; end
-end
-
+// Left-anchored stretch: the module grows the active rightward into the front
+// porch. Recenter (and gain headroom) by hand with the Analog Video H-Pos OSD
+// offset -- it shifts the HSync feeding this module (via jtframe_resync upstream),
+// which is exactly what an auto-recenter would do, so no extra logic is needed.
 wire [23:0] str_rgb;
 wire        str_hs, str_vs, str_hb, str_vb;
 analog_hsize u_analog_hsize
@@ -491,7 +470,7 @@ analog_hsize u_analog_hsize
 	.r_in    ( av_rgb[23:16]  ),
 	.g_in    ( av_rgb[15:8]   ),
 	.b_in    ( av_rgb[7:0]    ),
-	.hs_in   ( hs_cen         ),
+	.hs_in   ( av_hs          ),
 	.vs_in   ( av_vs          ),
 	.hb_in   ( ~av_de         ),
 	// vb_in must NOT carry the horizontal blank: av_de is the COMBINED active
