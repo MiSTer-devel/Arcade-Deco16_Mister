@@ -51,8 +51,9 @@ localparam CONF_STR = {
 	"P1O[14:13],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"P1O[5:3],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"P1-;",
-	"P1O[38:35],Analog Video H-Pos,0,1,2,3,4,5,6,7,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"P1O[42:39],Analog Video V-Pos,0,1,2,3,4,5,6,7,-8,-7,-6,-5,-4,-3,-2,-1;",
+	"P1O[34:32],Analog H-Size,0,1,2,3,4,5,6,7;",
+	"P1O[39:35],Analog Video H-Pos,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
+	"P1O[44:40],Analog Video V-Pos,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
 	"-;",
 	"DIP;",
 	"-;",
@@ -369,11 +370,10 @@ wire [23:0] game_rgb = { red, green, blue };
 // H/V position: shift the HSync/VSync relative to the active window with
 // jtframe_resync (same proven pattern as Arcade-TaitoF2). Signed 4-bit
 // offsets (-8..+7); negate to make "positive = right/down" like the OSD list.
-// (Analog H-Size was dropped: it required sys_top edits, which are off-limits.)
-wire signed [3:0] hoffset = status[38:35];
-wire signed [3:0] voffset = status[42:39];
+wire signed [4:0] hoffset = status[39:35];
+wire signed [4:0] voffset = status[44:40];
 wire resync_hs, resync_vs;
-jtframe_resync u_resync
+jtframe_resync #(.BITS(5)) u_resync
 (
 	.clk     ( clk48     ),
 	.pxl_cen ( pxl_cen   ),
@@ -387,6 +387,12 @@ jtframe_resync u_resync
 	.vs_out  ( resync_vs )
 );
 
+// arcade_video drives INTERNAL wires so the analog H-Size stretch can be
+// inserted at the emu output boundary (below) without any sys_top edits.
+wire        av_ce, av_hs, av_vs, av_de;
+wire [23:0] av_rgb;
+wire [ 1:0] av_sl;
+
 // jtframe LHBL/LVBL are active-low; arcade_video wants active-high HBlank/VBlank.
 arcade_video #(.WIDTH(256), .DW(24)) u_arcade_video
 (
@@ -399,20 +405,98 @@ arcade_video #(.WIDTH(256), .DW(24)) u_arcade_video
 	.HSync              ( resync_hs       ),
 	.VSync              ( resync_vs       ),
 
-	.CLK_VIDEO          ( CLK_VIDEO       ),
-	.CE_PIXEL           ( CE_PIXEL        ),
-	.VGA_R              ( VGA_R           ),
-	.VGA_G              ( VGA_G           ),
-	.VGA_B              ( VGA_B           ),
-	.VGA_HS             ( VGA_HS          ),
-	.VGA_VS             ( VGA_VS          ),
-	.VGA_DE             ( VGA_DE          ),
-	.VGA_SL             ( VGA_SL          ),
+	.CLK_VIDEO          (                 ),
+	.CE_PIXEL           ( av_ce           ),
+	.VGA_R              ( av_rgb[23:16]   ),
+	.VGA_G              ( av_rgb[15:8]    ),
+	.VGA_B              ( av_rgb[7:0]     ),
+	.VGA_HS             ( av_hs           ),
+	.VGA_VS             ( av_vs           ),
+	.VGA_DE             ( av_de           ),
+	.VGA_SL             ( av_sl           ),
 
 	.fx                 ( status[5:3]     ),
 	.forced_scandoubler ( forced_scandoubler ),
 	.gamma_bus          ( gamma_bus       )
 );
+
+// ---- Analog H-Size (experimental, NO sys_top edits) ---------------------
+// Stretch each pixel on the ANALOG path by holding it for more CLK_VIDEO
+// cycles: read the arcade_video stream out slightly slower than it arrived via
+// the analog_hsize elastic FIFO, and slow CE_PIXEL to match. The analog DAC in
+// sys_top reproduces pixel DURATION literally -> wider pixels; the HDMI scaler
+// normalizes active-to-fit -> HDMI is unaffected. One emu output stream thus
+// yields stretched analog + clean HDMI with the framework untouched.
+//
+// Re-timed on clk96 (16x pixel) for 6.25%/step instead of 12.5%: native pixel
+// = 8 clk48 = 16 clk96 (JTFRAME_PXLCLK=6 -> 6 MHz), so base 16 is exact. clk96
+// is 2x clk48 from the same PLL (synchronous), so arcade_video's clk48-domain
+// outputs are sampled safely on clk96. base 16 assumes scandoubler OFF (the
+// analog/CRT case); with it ON av_ce is faster -> over-stretch. EXPERIMENTAL.
+wire [2:0] hsize_amt = status[34:32];
+
+// av_ce (clk48 pixel enable) -> single clk96 write pulse
+reg  av_ce_d;
+always @(posedge clk96) av_ce_d <= av_ce;
+wire av_wr = av_ce & ~av_ce_d;
+
+// HSync rising (sampled on clk96) locks the read phase per line
+reg  av_hs_d;
+always @(posedge clk96) av_hs_d <= av_hs;
+wire av_hs_rise = av_hs & ~av_hs_d;
+
+// read enable: one pulse every (16 + hsize) clk96 cycles
+reg  [4:0] hsize_div;
+wire [4:0] hsize_max = 5'd15 + {2'd0, hsize_amt};   // base 16 (+hsize)
+always @(posedge clk96) begin
+	if (av_hs_rise || hsize_div == hsize_max) hsize_div <= 5'd0;
+	else                                      hsize_div <= hsize_div + 5'd1;
+end
+wire              str_ce  = (hsize_amt == 3'd0) ? av_wr : (hsize_div == 5'd0);
+wire signed [3:0] hsize_s = -$signed({1'b0, hsize_amt});  // module: 0 bypass, <0 wider
+
+// Left-anchored stretch: the module grows the active rightward into the front
+// porch. Recenter (and gain headroom) by hand with the Analog Video H-Pos OSD
+// offset -- it shifts the HSync feeding this module (via jtframe_resync upstream),
+// which is exactly what an auto-recenter would do, so no extra logic is needed.
+wire [23:0] str_rgb;
+wire        str_hs, str_vs, str_hb, str_vb;
+analog_hsize u_analog_hsize
+(
+	.clk     ( clk96          ),
+	.pxl_cen ( av_wr          ),
+	.pxl2_cen( str_ce         ),
+	.hsize   ( hsize_s        ),
+	.r_in    ( av_rgb[23:16]  ),
+	.g_in    ( av_rgb[15:8]   ),
+	.b_in    ( av_rgb[7:0]    ),
+	.hs_in   ( av_hs          ),
+	.vs_in   ( av_vs          ),
+	.hb_in   ( ~av_de         ),
+	// vb_in must NOT carry the horizontal blank: av_de is the COMBINED active
+	// (~(hbl|vbl)), so feeding ~av_de here makes vb_out rise at the original
+	// active-end and re-clamps the output DE to the original width (clipping the
+	// stretched tail). Vertical blank is already covered by hb_out (no pixels are
+	// pushed on vblank lines -> hb_out stays high -> DE low), so tie vb_in low.
+	.vb_in   ( 1'b0           ),
+	.r_out   ( str_rgb[23:16] ),
+	.g_out   ( str_rgb[15:8]  ),
+	.b_out   ( str_rgb[7:0]   ),
+	.hs_out  ( str_hs         ),
+	.vs_out  ( str_vs         ),
+	.hb_out  ( str_hb         ),
+	.vb_out  ( str_vb         )
+);
+
+assign CLK_VIDEO = clk96;
+assign CE_PIXEL  = str_ce;
+assign VGA_R     = str_rgb[23:16];
+assign VGA_G     = str_rgb[15:8];
+assign VGA_B     = str_rgb[7:0];
+assign VGA_HS    = str_hs;
+assign VGA_VS    = str_vs;
+assign VGA_DE    = ~str_hb & ~str_vb;
+assign VGA_SL    = av_sl;
 
 assign LED_USER = dwnld_busy;
 
