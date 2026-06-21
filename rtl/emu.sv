@@ -494,7 +494,12 @@ analog_hsize u_analog_hsize
 	.hs_in   ( hs_cen         ),
 	.vs_in   ( av_vs          ),
 	.hb_in   ( ~av_de         ),
-	.vb_in   ( ~av_de         ),
+	// vb_in must NOT carry the horizontal blank: av_de is the COMBINED active
+	// (~(hbl|vbl)), so feeding ~av_de here makes vb_out rise at the original
+	// active-end and re-clamps the output DE to the original width (clipping the
+	// stretched tail). Vertical blank is already covered by hb_out (no pixels are
+	// pushed on vblank lines -> hb_out stays high -> DE low), so tie vb_in low.
+	.vb_in   ( 1'b0           ),
 	.r_out   ( str_rgb[23:16] ),
 	.g_out   ( str_rgb[15:8]  ),
 	.b_out   ( str_rgb[7:0]   ),
