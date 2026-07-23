@@ -1,4 +1,4 @@
-# Arcade core for DECO16 games (Caveman Ninja and Crude Buster for now)
+# Arcade core for DECO16 games: Caveman Ninja, Crude Buster, Vaportrail
 
 ## General description
 This repo contains an HDL  wrapper for the games Caveman Ninja, Crude Buster and Vapor Trail (Crude Buster is also known in the West as 'Two Crude Dudes').
