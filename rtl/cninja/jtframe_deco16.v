@@ -1,4 +1,4 @@
-/*  See jtcninja_game.v header.
+/*  This file is part of JTCORES. GPLv3. See jtcninja_game.v header.
 
     jtframe_deco16 - faithful single-playfield renderer for the Data East
     deco16ic tile generator (custom chips 55 / 56 / 74, 4bpp). One instance

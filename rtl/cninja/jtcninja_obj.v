@@ -1,4 +1,4 @@
-/*  See jtcninja_game.v header.
+/*  This file is part of JTCORES. GPLv3. See jtcninja_game.v header.
 
     Sprite wrapper for the Caveman Ninja hardware family. Both cninja and
     darkseal use the DECO decospr / MXC-06 sprite chip with the SAME word

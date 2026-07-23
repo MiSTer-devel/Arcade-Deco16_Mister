@@ -21,7 +21,7 @@ assign ADC_BUS  = 'Z;
 assign USER_OUT = '1;
 assign {UART_RTS, UART_TXD, UART_DTR} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
-assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = '0;
+// DDRAM is driven by u_rotate (screen_rotate) for the vertical framebuffer.
 
 assign VGA_F1       = 0;
 assign VGA_SCALER   = 0;
@@ -36,11 +36,9 @@ assign LED_DISK  = 0;
 assign LED_POWER = 0;
 assign BUTTONS   = 0;
 
-//////////////////////////////  ASPECT RATIO  ////////////////////////////////
-// cninja is a horizontal 4:3 game (256x240).
 wire [1:0] ar = status[14:13];
-assign VIDEO_ARX = (!ar) ? 12'd4 : (ar - 1'd1);
-assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
+assign VIDEO_ARX = (!ar) ? (no_rotate ? 12'd4 : 12'd3) : (ar - 1'd1);
+assign VIDEO_ARY = (!ar) ? (no_rotate ? 12'd3 : 12'd4) : 12'd0;
 
 //////////////////////////////   CONF_STR   //////////////////////////////////
 `include "build_id.v"
@@ -49,10 +47,13 @@ localparam CONF_STR = {
 	"-;",
 	"P1,Video Settings;",
 	"P1O[14:13],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
+	"P1O[2:1],Vertical rotation,Off,CW,CCW,Off;",
 	"P1O[5:3],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"P1-;",
-	"P1O[38:35],Analog Video H-Pos,0,1,2,3,4,5,6,7,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"P1O[42:39],Analog Video V-Pos,0,1,2,3,4,5,6,7,-8,-7,-6,-5,-4,-3,-2,-1;",
+	"P1O[32],CRT Adjust,Off,On;",
+	"H1P1O[37:33],CRT H-Size,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
+	"H1P1O[42:38],CRT H-Position,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
+	"H1P1O[47:43],CRT V-Shift,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
 	"-;",
 	"DIP;",
 	"-;",
@@ -113,7 +114,7 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 	.buttons            ( buttons            ),
 	.status             ( status             ),
-	.status_menumask    ( 16'd0              ),
+	.status_menumask    ( {14'd0, ~status[32], 1'b0} ),  // H1: hide CRT amounts unless On
 	.forced_scandoubler ( forced_scandoubler ),
 	.direct_video       ( direct_video       ),
 	.gamma_bus          ( gamma_bus          ),
@@ -154,6 +155,12 @@ sync_rst u_rst96(.clk(clk96), .arst(core_reset), .rst(rst96));
 // MRA index 0 -> main ROM stream into the jtframe download path.
 // DIPs arrive on index 254 (4 bytes).
 wire        ioctl_rom = ioctl_download & (ioctl_index[15:0]==16'd0);
+
+// game_id = MRA header byte 0 (JTFRAME_HEADER=16, same byte the core decodes to
+// pick the address map). Latch it here so emu can rotate the vertical game.
+reg  [3:0]  game_id = 4'd0;
+always @(posedge clk48)
+	if (ioctl_rom && ioctl_wr && ioctl_addr[25:0]==26'd0) game_id <= ioctl_dout[3:0];
 
 reg  [7:0]  dsw[0:3];
 always @(posedge clk48) begin
@@ -365,39 +372,114 @@ jtframe_board_sdram #(.SDRAMW(22), .MISTER(1)) u_sdram
 //////////////////////////////   VIDEO   /////////////////////////////////////
 wire [23:0] game_rgb = { red, green, blue };
 
-// ---- analog video adjustments (OSD) -------------------------------------
-// H/V position: shift the HSync/VSync relative to the active window with
-// jtframe_resync (same proven pattern as Arcade-TaitoF2). Signed 4-bit
-// offsets (-8..+7); negate to make "positive = right/down" like the OSD list.
-// (Analog H-Size was dropped: it required sys_top edits, which are off-limits.)
-wire signed [3:0] hoffset = status[38:35];
-wire signed [3:0] voffset = status[42:39];
-wire resync_hs, resync_vs;
-jtframe_resync u_resync
+// ---- CRT Adjust (core-side analog geometry, OSD-controlled) --------------
+// crt_adjust shifts/resizes the picture CONTENT through a line buffer while the
+// native HSync/VSync pass through untouched, so a real CRT never loses lock.
+// Three controls, all live only while CRT Adjust is On:
+//   H-Size     : horizontal stretch/squeeze (read rate vs write rate)
+//   H-Position : horizontal content shift    (read address offset, sync intact)
+//   V-Shift    : vertical line shift          (VSync delayed N lines)
+// Inserted BEFORE arcade_video: the module runs at the native 6 MHz pixel rate;
+// arcade_video's scandoubler/mixer then runs off the read clock-enable. Replaces
+// the old jtframe_resync H/V-Pos, which moved the sync (and whose analog H-Size
+// half always needed a sys_top edit — this content-shift variant needs none).
+wire crt_on = status[32];
+
+// Decode signed 5-bit OSD amounts (0, +1..+15, -16..-1).
+wire signed [4:0] hsize_s  = $signed(status[37:33]);
+wire signed [4:0] hpos_s   = $signed(status[42:38]);
+wire signed [5:0] vshift_s = $signed(status[47:43]);
+wire signed [8:0] hpos_off = hpos_s;   // sign-extend to the module's 9-bit H-Position
+
+// Read clock-enable: one pixel every (32 + hsize) QUARTER-cycles of clk48
+// (base 32 = 8 whole cycles = the native 6 MHz pixel; each H-Size step ~3%).
+// Reset the accumulator on the NATIVE HSync rise -> deterministic per-line phase.
+reg  HS_d;
+always @(posedge clk48) HS_d <= HS;
+wire native_hs_rise = HS & ~HS_d;
+
+wire [7:0] rd_period = 8'd32 + {{3{hsize_s[4]}}, hsize_s};   // -16..+15 -> 16..47
+reg  [7:0] rd_acc;
+wire       rd_tick = (rd_acc + 8'd4) >= {1'b0, rd_period};
+always @(posedge clk48) begin
+	if      (native_hs_rise) rd_acc <= 8'd0;
+	else if (rd_tick)        rd_acc <= rd_acc + 8'd4 - {1'b0, rd_period};
+	else                     rd_acc <= rd_acc + 8'd4;
+end
+wire rd_ce = crt_on ? rd_tick : pxl_cen;
+
+// The module: fed the NATIVE sync (keeps the CRT locked) and the TRUE vertical
+// blank on vb_in (so the downstream OSD keeps a valid vertical frame boundary).
+wire [7:0] str_r, str_g, str_b;
+wire       str_hs, str_vs, str_hb, str_vb;
+crt_adjust #(.VTOTAL(274)) u_crt_adjust
 (
-	.clk     ( clk48     ),
-	.pxl_cen ( pxl_cen   ),
-	.hs_in   ( HS        ),
-	.vs_in   ( VS        ),
-	.LVBL    ( LVBL      ),
-	.LHBL    ( LHBL      ),
-	.hoffset ( -hoffset  ),
-	.voffset ( -voffset  ),
-	.hs_out  ( resync_hs ),
-	.vs_out  ( resync_vs )
+	.clk      ( clk48         ),
+	.pxl_cen  ( pxl_cen       ),        // write rate (native 6 MHz pixel)
+	.pxl2_cen ( rd_ce         ),        // read rate  (H-Size)
+	.active   ( crt_on        ),
+	.hsize    ( hsize_s       ),
+	.hoffset  ( hpos_off      ),
+	.voffset  ( vshift_s      ),
+	.r_in     ( red           ),
+	.g_in     ( green         ),
+	.b_in     ( blue          ),
+	.hs_in    ( HS            ),        // NATIVE HSync -> no desync
+	.vs_in    ( VS            ),
+	.hb_in    ( ~LHBL | ~LVBL ),        // combined blank
+	.vb_in    ( ~LVBL         ),        // true vertical blank
+	.r_out    ( str_r         ),
+	.g_out    ( str_g         ),
+	.b_out    ( str_b         ),
+	.hs_out   ( str_hs        ),
+	.vs_out   ( str_vs        ),
+	.hb_out   ( str_hb        ),
+	.vb_out   ( str_vb        )
 );
 
-// jtframe LHBL/LVBL are active-low; arcade_video wants active-high HBlank/VBlank.
+// Keep the OSD PUT: the MiSTer OSD centers on the RISING edge of VGA_DE. Build a
+// DE window whose rising is anchored to the NATIVE active region and whose
+// falling follows the stretched active's end, so H-Position slides the image
+// without dragging the OSD. Fed to arcade_video as its (active-low) HBlank; it
+// already drops during VBlank, so arcade_video's VBlank is tied low then.
+reg  lvbl_1l;
+always @(posedge clk48) if (native_hs_rise) lvbl_1l <= LVBL;   // per-line vertical-visible
+wire native_active = LHBL & lvbl_1l;
+reg  native_active_d;
+always @(posedge clk48) if (pxl_cen) native_active_d <= native_active;
+wire native_rise = native_active & ~native_active_d;
+
+wire str_active = ~str_hb;
+reg  str_active_d;
+always @(posedge clk48) if (rd_ce) str_active_d <= str_active;
+wire str_fall = str_active_d & ~str_active;
+
+reg de_osd;
+always @(posedge clk48) begin
+	if      (native_rise) de_osd <= 1'b1;
+	else if (str_fall)    de_osd <= 1'b0;
+end
+
+// Mux: CRT Adjust On -> module outputs at the read rate; Off -> native
+// passthrough (bit-identical to no module). jtframe LHBL/LVBL are active-low;
+// arcade_video wants active-high HBlank/VBlank.
+wire        av_ce  = crt_on ? rd_ce                 : pxl_cen;
+wire [23:0] av_rgb = crt_on ? {str_r, str_g, str_b} : game_rgb;
+wire        av_hb  = crt_on ? ~de_osd               : ~LHBL;
+wire        av_vb  = crt_on ? 1'b0                  : ~LVBL;
+wire        av_hs  = crt_on ? str_hs                : HS;
+wire        av_vs  = crt_on ? str_vs                : VS;
+
 arcade_video #(.WIDTH(256), .DW(24)) u_arcade_video
 (
 	.clk_video          ( clk48           ),
-	.ce_pix             ( pxl_cen         ),
+	.ce_pix             ( av_ce           ),
 
-	.RGB_in             ( game_rgb        ),
-	.HBlank             ( ~LHBL           ),
-	.VBlank             ( ~LVBL           ),
-	.HSync              ( resync_hs       ),
-	.VSync              ( resync_vs       ),
+	.RGB_in             ( av_rgb          ),
+	.HBlank             ( av_hb           ),
+	.VBlank             ( av_vb           ),
+	.HSync              ( av_hs           ),
+	.VSync              ( av_vs           ),
 
 	.CLK_VIDEO          ( CLK_VIDEO       ),
 	.CE_PIXEL           ( CE_PIXEL        ),
@@ -412,6 +494,52 @@ arcade_video #(.WIDTH(256), .DW(24)) u_arcade_video
 	.fx                 ( status[5:3]     ),
 	.forced_scandoubler ( forced_scandoubler ),
 	.gamma_bus          ( gamma_bus       )
+);
+
+// ---- rotation (vertical games) ------------------------------------------
+wire [1:0] rot_mode = status[2:1];       // 0/3=off, 1=CW, 2=CCW
+wire vertical   = (game_id == 4'd3);
+wire rot_cw     = (rot_mode == 2'd1);
+wire rot_ccw    = (rot_mode == 2'd2);
+wire no_rotate  = ~(vertical & (rot_cw | rot_ccw) & ~direct_video);
+wire rotate_ccw = rot_ccw;
+wire video_rotated;
+
+assign FB_FORCE_BLANK = 1'b0;
+
+screen_rotate u_rotate
+(
+	.CLK_VIDEO      ( CLK_VIDEO      ),
+	.CE_PIXEL       ( CE_PIXEL       ),
+	.VGA_R          ( VGA_R          ),
+	.VGA_G          ( VGA_G          ),
+	.VGA_B          ( VGA_B          ),
+	.VGA_HS         ( VGA_HS         ),
+	.VGA_VS         ( VGA_VS         ),
+	.VGA_DE         ( VGA_DE         ),
+
+	.rotate_ccw     ( rotate_ccw     ),
+	.no_rotate      ( no_rotate      ),
+	.flip           ( 1'b0           ),
+	.video_rotated  ( video_rotated  ),
+
+	.FB_EN          ( FB_EN          ),
+	.FB_FORMAT      ( FB_FORMAT      ),
+	.FB_WIDTH       ( FB_WIDTH       ),
+	.FB_HEIGHT      ( FB_HEIGHT      ),
+	.FB_BASE        ( FB_BASE        ),
+	.FB_STRIDE      ( FB_STRIDE      ),
+	.FB_VBL         ( FB_VBL         ),
+	.FB_LL          ( FB_LL          ),
+
+	.DDRAM_CLK      ( DDRAM_CLK      ),
+	.DDRAM_BUSY     ( DDRAM_BUSY     ),
+	.DDRAM_BURSTCNT ( DDRAM_BURSTCNT ),
+	.DDRAM_ADDR     ( DDRAM_ADDR     ),
+	.DDRAM_DIN      ( DDRAM_DIN      ),
+	.DDRAM_BE       ( DDRAM_BE       ),
+	.DDRAM_WE       ( DDRAM_WE       ),
+	.DDRAM_RD       ( DDRAM_RD       )
 );
 
 assign LED_USER = dwnld_busy;

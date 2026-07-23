@@ -64,6 +64,10 @@ set_global_assignment -name VERILOG_MACRO "JTFRAME_JOY_RLDU=1"
 set_global_assignment -name VERILOG_MACRO "JTFRAME_MCLK=48000000"
 set_global_assignment -name VERILOG_MACRO "JTFRAME_ARX=4"
 set_global_assignment -name VERILOG_MACRO "JTFRAME_ARY=3"
+# MiSTer DDR3 framebuffer: exposes the FB_* emu ports + enables the sys_top
+# framebuffer readout so emu.sv's screen_rotate can rotate the vertical games
+# (vaportra, ROT270). Horizontal games leave FB_EN=0 -> normal scandoubler path.
+set_global_assignment -name VERILOG_MACRO "MISTER_FB=1"
 # SDRAM bank layout (byte addresses, decimal == macros.def hex):
 #   BA0=sprites(2MB)  BA1=0x200000  BA2=0x300000  BA3=0x590000
 #   GFX3(scr)=0x200000 in BA1, copy2 GFX3_BA2=0x490000 in BA2

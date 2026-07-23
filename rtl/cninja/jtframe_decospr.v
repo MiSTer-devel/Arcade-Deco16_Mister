@@ -1,4 +1,4 @@
-/*  See jtcninja_game.v header.
+/*  This file is part of JTCORES. GPLv3. See jtcninja_game.v header.
 
     jtframe_decospr - Data East DECO sprite generator (decospr / MXC-06 family,
     4bpp). MAME ref: decospr.cpp (mirrored in cores/cninja/doc).

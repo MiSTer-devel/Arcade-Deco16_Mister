@@ -21,7 +21,7 @@ localparam [25:0] BA2_START  =`ifdef JTFRAME_BA2_START  `JTFRAME_BA2_START  `els
 localparam [25:0] BA3_START  =`ifdef JTFRAME_BA3_START  `JTFRAME_BA3_START  `else 26'd0 `endif;
 localparam [25:0] PROM_START =`ifdef JTFRAME_PROM_START `JTFRAME_PROM_START `else 26'd0 `endif;
 localparam [25:0] HEADER_LEN =`ifdef JTFRAME_HEADER     `JTFRAME_HEADER     `else 26'd0 `endif;
-localparam        SDRAMW     =`ifdef JTFRAME_SDRAM_LARGE 24 `else 23 `endif;
+localparam        SDRAMW     =`ifdef JTFRAME_SDRAM_XL 25 `elsif JTFRAME_SDRAM_LARGE 24 `else 23 `endif;
 /* verilator lint_on WIDTH */
 
 
@@ -273,6 +273,10 @@ jtcninja_game u_game(
     .ln_vs       ( ln_vs         ),
     .ln_lvbl     ( ln_lvbl       ),
     .ln_we       ( ln_we         ),
+`ifdef JTFRAME_LF_ZOOM
+    .h_step      ( h_step        ),
+    .v_step      ( v_step        ),
+`endif
 `endif
     .gfx_en      ( gfx_en        )
 );

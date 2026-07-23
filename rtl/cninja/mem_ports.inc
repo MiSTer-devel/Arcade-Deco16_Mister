@@ -16,7 +16,9 @@
     output signed [13:0] pcm1,
     output signed [13:0] pcm2,
     // Memory ports
-`ifdef JTFRAME_SDRAM_LARGE
+`ifdef JTFRAME_SDRAM_XL
+    input   [23:0]  prog_addr,
+`elsif JTFRAME_SDRAM_LARGE
     input   [22:0]  prog_addr,
 `else
     input   [21:0]  prog_addr,
@@ -26,7 +28,9 @@
     input   [ 1:0]  prog_ba,
     input   [25:0]  ioctl_addr,
     input           prom_we,
-`ifdef JTFRAME_SDRAM_LARGE
+`ifdef JTFRAME_SDRAM_XL
+    output reg [23:0] post_addr,
+`elsif JTFRAME_SDRAM_LARGE
     output reg [22:0] post_addr,
 `else
     output reg [21:0] post_addr,

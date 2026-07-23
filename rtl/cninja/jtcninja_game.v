@@ -1,18 +1,23 @@
-/*  you can redistribute it and/or modify
+/*  This file is part of JTCORES.
+    JTCORES program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
-    this program is distributed in the hope that it will be useful,
+    JTCORES program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with this.  If not, see <http://www.gnu.org/licenses/>.
+    along with JTCORES.  If not, see <http://www.gnu.org/licenses/>.
 
     Author: Andrea Bogazzi
-    Date: 2026-06-10
+    Version: 0.1 (scaffold)
+    Date: 2026
+
+    SCAFFOLD -- Data East DECO 16-bit (cninja.cpp), Caveman Ninja / Joe & Mac.
+    This is a structural skeleton: submodules are stubs. See doc/STATUS.md.
 */
 
 module jtcninja_game(
@@ -83,6 +88,7 @@ wire [ 8:0] vdump;
 // Video timing / mix
 wire        flip;
 wire        cb_pri;    // cbuster TC-4 layer priority (main -> video colmix)
+wire [15:0] vprio0, vprio1;  // vaportra m_priority[0..1] (main -> video colmix)
 wire        cen_opn, cen_opm, cen_oki1, cen_oki2;
 
 assign dsn        = { UDSWn, LDSWn };
@@ -306,6 +312,8 @@ jtcninja_main u_main(
     // Caveman Ninja Hardware family selector + Dark Seal direct I/O
     .game_id    ( game_id   ),
     .prot_pri   ( cb_pri    ),
+    .vprio0     ( vprio0    ),
+    .vprio1     ( vprio1    ),
     .snd_wr     ( snd_wr    ),
     .snd_dout   ( snd_dout  ),
     .joystick1  ( joystick1 ),
@@ -389,6 +397,8 @@ jtcninja_video u_video(
     .flip       ( flip      ),
     .game_id    ( game_id   ),
     .cbpri      ( cb_pri    ),
+    .vprio0     ( vprio0    ),
+    .vprio1     ( vprio1    ),
     // CPU interface (widened to [19:1] so video can decode darkseal's exploded
     // tilegen/palette regions; cninja only needs [15:1])
     .cpu_addr   ( main_addr[19:1] ),

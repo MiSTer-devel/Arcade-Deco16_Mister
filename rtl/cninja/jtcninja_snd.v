@@ -1,4 +1,4 @@
-/*  See jtcninja_game.v header.
+/*  This file is part of JTCORES. GPLv3. See jtcninja_game.v header.
 
     Sound subsystem for Data East cninja.cpp (Joe & Mac).
     Modeled on cores/{midres,slyspy}/hdl/*_snd.v (same HuC6280 family).

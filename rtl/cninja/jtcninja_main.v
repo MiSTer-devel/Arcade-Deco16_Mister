@@ -1,4 +1,4 @@
-/*  See jtcninja_game.v header.
+/*  This file is part of JTCORES. GPLv3. See jtcninja_game.v header.
 
     Main 68000 subsystem for Data East cninja.cpp (Joe & Mac).
     Reference memory map: doc/cninja.cpp ::cninja_map
@@ -50,6 +50,11 @@ module jtcninja_main(
     input      [ 3:0] game_id,
     // Crude Buster TC-4 PAL layer priority (m_pri): swaps mg/pf1b draw order
     output            prot_pri,
+    // Vapor Trail priority regs (0x100000/2). [0]&3 picks one of four playfield
+    // draw orders; sprites with colour >= [1] go behind the pri-4 tilemap.
+    // vaportra-only (game_id==3); ignored by the other games.
+    output     [15:0] vprio0,
+    output     [15:0] vprio1,
     // Direct cabinet inputs (darkseal reads these straight off the bus at
     // 0x180000-0x180004; cninja goes through the DECO 104 and ignores them)
     output            snd_wr,      // darkseal soundlatch write strobe (0x180008)
@@ -235,7 +240,7 @@ assign pal_cs    = !BUSn && (ds ? (A[23:16]==8'h14)                            /
                                 : (A[23:16]==8'h19 && A[15:13]==3'b110));       // 19c000-19dfff
 assign objram_cs = !BUSn && ((ds|sb) ? (A[23:16]==8'h12 && A[15:11]==5'd0)     // 120000-1207ff
                           : cb ? (A[23:16]==8'h0b && A[15:11]==5'd0)          // 0b0000-0b07ff
-                          : vp ? (A[23:16]==8'h31 && A[15:11]==5'b10000)      // 318000-3187ff
+                          : vp ? (A[21]&A[20]&A[16]&A[15]&~|A[14:11])         // 318000-3187ff mirror(0xce0000): also 0xff8000
                                 : (A[23:16]==8'h1a && A[15:14]==2'b01));        // 1a4000-1a47ff
 // tilegens: cninja packs each in a 64kB window; darkseal/cbuster explode
 // data/control across the map. pf0_cs = tilegen[0] footprint, pf1_cs =
@@ -261,6 +266,8 @@ assign obj_copy  = ds ? ds_sprdma : cb ? cb_sprdma : vp ? vp_sprdma : (objdma_cs
 assign snd_wr    = ds_snd_cs | cb_snd_cs | sb_snd_cs | vp_snd_cs;
 assign snd_dout  = cpu_dout[7:0];
 assign prot_pri  = cb_pri;   // cbuster TC-4 layer priority -> video
+assign vprio0    = vp_prio0;  // vaportra m_priority[0] (layer order)
+assign vprio1    = vp_prio1;  // vaportra m_priority[1] (sprite threshold)
 
 // Dark Seal direct input words. jtframe joystick/cab/coin are ALREADY active-low
 // (idle=1), matching MAME's IP_ACTIVE_LOW - so NO inversion (same as the DECO 104
@@ -484,5 +491,6 @@ end
     assign pf0_cs=0; assign pf1_cs=0; assign objram_cs=0; assign obj_copy=0;
     assign pal_cs=0; assign prot_cs=0;
     assign snd_wr=0; assign snd_dout=0; assign prot_pri=0;
+    assign vprio0=0; assign vprio1=0;
 `endif
 endmodule
