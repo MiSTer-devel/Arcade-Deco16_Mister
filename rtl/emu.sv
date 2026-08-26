@@ -118,6 +118,8 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.forced_scandoubler ( forced_scandoubler ),
 	.direct_video       ( direct_video       ),
 	.gamma_bus          ( gamma_bus          ),
+	// tells the HPS the picture is rotated so the OSD rotates with it
+	.video_rotated      ( video_rotated      ),
 
 	.joystick_0         ( joystick_0         ),
 	.joystick_1         ( joystick_1         ),
@@ -156,11 +158,13 @@ sync_rst u_rst96(.clk(clk96), .arst(core_reset), .rst(rst96));
 // DIPs arrive on index 254 (4 bytes).
 wire        ioctl_rom = ioctl_download & (ioctl_index[15:0]==16'd0);
 
-// game_id = MRA header byte 0 (JTFRAME_HEADER=16, same byte the core decodes to
-// pick the address map). Latch it here so emu can rotate the vertical game.
-reg  [3:0]  game_id = 4'd0;
+// board = MRA header byte 0, the same byte jtcninja_header.v latches. It is a
+// ONE-HOT BITMASK, one bit per board (mame2mra.toml [header] pos="0[n]"), NOT an
+// ordinal: bit0 cninja, bit1 cbuster, bit2 darkseal, bit3 vaportra, bit4 edrandy.
+// Latch the whole byte - edrandy is bit 4, so [3:0] would truncate it away.
+reg  [7:0]  board = 8'd0;
 always @(posedge clk48)
-	if (ioctl_rom && ioctl_wr && ioctl_addr[25:0]==26'd0) game_id <= ioctl_dout[3:0];
+	if (ioctl_rom && ioctl_wr && ioctl_addr[25:0]==26'd0) board <= ioctl_dout;
 
 reg  [7:0]  dsw[0:3];
 always @(posedge clk48) begin
@@ -498,7 +502,7 @@ arcade_video #(.WIDTH(256), .DW(24)) u_arcade_video
 
 // ---- rotation (vertical games) ------------------------------------------
 wire [1:0] rot_mode = status[2:1];       // 0/3=off, 1=CW, 2=CCW
-wire vertical   = (game_id == 4'd3);
+wire vertical   = board[3];              // Vapor Trail / Kuhga is the ROT270 board
 wire rot_cw     = (rot_mode == 2'd1);
 wire rot_ccw    = (rot_mode == 2'd2);
 wire no_rotate  = ~(vertical & (rot_cw | rot_ccw) & ~direct_video);

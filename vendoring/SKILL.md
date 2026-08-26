@@ -22,7 +22,7 @@ A hand-edit is silently overwritten on the next refresh and diverges from upstre
 | **HAND** | `rtl/emu.sv`, `rtl/pll*`, `rtl/analog_hsize.sv`, `sys/`, `*.qsf/.qpf/.sdc`, the MRA | maintained by hand | **never** |
 
 `rtl/<module>` → jtcores root map (in `vendoring/vendor.py`): `jtframe`→`modules/jtframe/hdl`,
-`jt12`→`modules/jt12/hdl`, `jt49`→`modules/jt12/jt49/hdl` (nested!), `jt51`,`jt6295`,
+`jt12`→`modules/jt12/hdl`, `jt49`→`modules/jt12/jt49/hdl` (nested!), `ikaopm`,`jt6295`,
 `fx68k`→`modules/<m>/hdl`, `huc6280`→`modules/HUC6280/hdl`, `<core>`→`cores/<core>/hdl`.
 The search skips `target/`,`verilator/`,`ver/`,`sim/`,`tb/` so no sim/MiSTer-target
 variant is ever pulled (sys/emu replaces jtframe's own MiSTer target).

@@ -24,25 +24,22 @@
     <rotation>horizontal</rotation>
     <name>Crude Buster (World FX version)</name>
     <setname>cbuster</setname>
-    <mameversion>0276</mameversion>
+    <mameversion>0282</mameversion>
     <year>1990</year>
     <manufacturer>Data East Corporation</manufacturer>
     <players>2</players>
-    <rbf>Deco16</rbf>
+    <rbf>deco16</rbf>
     <joystick>8</joystick>
     <region>World</region>
     <rom index="0" zip="cbuster.zip" md5="None">
-        <!-- Caveman Ninja Hardware family header (decoded in jtcninja_game.v).
-        byte 0 = game_id  (0=cninja/joemac, 1=cbuster, 2=darkseal/gatedoom)
-        byte 1 = gfx char-region end   (BA3 word offset >> 16, i.e. 64kB-word units)
-        byte 2 = gfx tiles1-region end
-        byte 3 = gfx tiles2-region end
-        byte 4 bit0 = tiles2 has ROM_CONTINUE (1MB cninja) vs single ROM (darkseal)
-        These let the gfx download remap use each game's real region sizes, so a
-        smaller region's trailing blob padding can't fold onto and overwrite the
-        real data. Bytes 5..15 reserved. See doc/HW_FAMILY.md. -->
+        <!-- 
+  0[0]: cninja     Caveman Ninja hardware
+  0[1]: cbust      Crude Buster hardware
+  0[2]: dseal      Dark Seal hardware
+  0[3]: vapor      Vapor Trail hardware
+  0[4]: edrndy     Edward Randy hardware -->
         <part>
-            01 01 05 09 00 00 00 00
+            02 00 00 00 00 00 00 00
             00 00 00 00 00 00 00 00
         </part>
         <!-- sprites1 - starts at 0x0 - length 0x100000 (20 bits) -->
@@ -51,21 +48,24 @@
             <part name="mab-03.11a" crc="76053b9d" map="2100" length="0x80000"/>
         </interleave>
         <!-- SPR2_START -->
-        <!-- sprites1hi - starts at 0x100000 - length 0x100000 (20 bits) -->
+        <!-- sprites1hi - starts at 0x100000 - length 0x400000 (22 bits) -->
         <interleave output="32">
             <part name="fu07-.4a" crc="ca8d0bb3" map="0001" length="0x10000"/>
             <part name="fu08-.5a" crc="c6afc5c8" map="0010" length="0x10000"/>
             <part name="fu09-.7a" crc="526809ca" map="0100" length="0x10000"/>
             <part name="fu10-.8a" crc="6be6d50e" map="1000" length="0x10000"/>
         </interleave>
-        <part repeat="0xC0000"> FF</part>
+        <part repeat="0x3C0000"> FF</part>
+        <!-- SND_START -->
+        <!-- audiocpu - starts at 0x500000 - length 0x10000 (16 bits) -->
+        <part name="fu11-.19h" crc="65f20f10"/>
         <!-- GFX3_START -->
         <!-- JTFRAME_BA1_START -->
-        <!-- tiles2 - starts at 0x200000 - length 0x100000 (20 bits) -->
+        <!-- tiles2 - starts at 0x510000 - length 0x100000 (20 bits) -->
         <part name="mab-01.19a" crc="1080d619"/>
         <part repeat="0x80000"> FF</part>
         <!-- JTFRAME_BA2_START -->
-        <!-- maincpu - starts at 0x300000 - length 0xD0000 (20 bits) -->
+        <!-- maincpu - starts at 0x610000 - length 0x100000 (20 bits) -->
         <interleave output="16">
             <part name="fx00.4l" crc="5bc2c0de" map="01"/>
             <part name="fx01.7l" crc="ddae6d83" map="10"/>
@@ -74,34 +74,26 @@
             <part name="fx02.6l" crc="b875266b" map="01"/>
             <part name="fx03.9l" crc="c3d65bf9" map="10"/>
         </interleave>
-        <part repeat="0x50000"> FF</part>
+        <part repeat="0x80000"> FF</part>
         <!-- PCM_START -->
-        <!-- oki1 - starts at 0x3D0000 - length 0x40000 (18 bits) -->
+        <!-- oki1 - starts at 0x710000 - length 0x40000 (18 bits) -->
         <part name="fu12-.16k" crc="2d1d65f2"/>
         <part repeat="0x20000"> FF</part>
         <!-- PCM2_START -->
-        <!-- oki2 - starts at 0x410000 - length 0x80000 (19 bits) -->
+        <!-- oki2 - starts at 0x750000 - length 0x80000 (19 bits) -->
         <part name="fu13-.21e" crc="b8525622"/>
         <part repeat="0x60000"> FF</part>
-        <!-- GFX3_BA2_START -->
-        <!-- tiles2b - starts at 0x490000 - length 0x100000 (20 bits) -->
-        <part name="mab-01.19a" crc="1080d619"/>
-        <part repeat="0x80000"> FF</part>
-        <!-- GFX1_START -->
         <!-- JTFRAME_BA3_START -->
-        <!-- chars - starts at 0x590000 - length 0x20000 (17 bits) -->
+        <!-- GFX1_START -->
+        <!-- chars - starts at 0x7D0000 - length 0x20000 (17 bits) -->
         <interleave output="16">
             <part name="fu05-.6c" crc="8134d412" map="01"/>
             <part name="fu06-.7c" crc="2f914a45" map="10"/>
         </interleave>
         <!-- GFX2_START -->
-        <!-- tiles1 - starts at 0x5B0000 - length 0x80000 (19 bits) -->
+        <!-- tiles1 - starts at 0x7F0000 - length 0x80000 (19 bits) -->
         <part name="mab-00.4c" crc="660eaabd"/>
-        <!-- JTFRAME_PROM_START -->
-        <!-- audiocpu:snd - starts at 0x630000 -->
-        <!-- audiocpu - starts at 0x630000 - length 0x10000 (16 bits) -->
-        <part name="fu11-.19h" crc="65f20f10"/>
-        <!-- Total 0x640000 bytes - 6400 kBytes -->
+        <!-- Total 0x870000 bytes - 8640 kBytes -->
     </rom>
     <rom index="1">
         <part>00 80</part>

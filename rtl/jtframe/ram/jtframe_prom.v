@@ -1,20 +1,6 @@
-/*  This file is part of JTFRAME.
-    JTFRAME program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    JTFRAME program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with JTFRAME.  If not, see <http://www.gnu.org/licenses/>.
-
-    Author: Jose Tejada Gomez. Twitter: @topapate
-    Version: 1.0
-    Date: 27-10-2017 */
+/* SPDX-FileCopyrightText: 2026 Jose Tejada Gomez
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Date: 27-10-2017 */
 
 `ifndef VERILATOR_KEEP_SDRAM /* verilator tracing_off */ `endif
 module jtframe_prom #(parameter
@@ -40,10 +26,13 @@ module jtframe_prom #(parameter
 `ifdef SIMULATION
 /* verilator lint_off WIDTH */
 integer f, readcnt;
-`ifndef LOADROM
-// load the file only when SPI load is not simulated
+// SIMFILE is ROM-blob content, which the SPI download supplies when LOADROM is
+// set, so it is only read when that download is not simulated. SIMHEX is a
+// synthesis constant (paired with SYNHEX, e.g. a protection LUT) that nothing
+// in the blob ever writes - it must be read even under LOADROM.
 initial begin
     if( SIMFILE != "" ) begin
+`ifndef LOADROM
         f=$fopen(SIMFILE,"rb");
         if( f != 0 ) begin
             readcnt=$fseek( f, OFFSET, 0 );
@@ -53,6 +42,7 @@ initial begin
         end else begin
             $display("WARNING: %m cannot open %s", SIMFILE);
         end
+`endif
     end else if( SIMHEX != "" ) begin
         $display("INFO: reading %14s (hex) for %m", SIMHEX );
         $readmemh( SIMHEX, mem );
@@ -61,7 +51,6 @@ initial begin
             mem[readcnt] = {DW{1'b0}};
     end
 end
-`endif
 `ifdef MEM_CHECK_TIME
     // check contents after 80ms
     reg [DW-1:0] mem_check[0:(2**AW)-1];

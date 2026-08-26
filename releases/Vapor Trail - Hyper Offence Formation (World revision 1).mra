@@ -28,36 +28,40 @@
     <year>1989</year>
     <manufacturer>Data East Corporation</manufacturer>
     <players>2</players>
-    <rbf>Deco16</rbf>
+    <rbf>deco16</rbf>
     <joystick>8</joystick>
     <region>World</region>
     <rom index="0" zip="vaportra.zip" md5="None">
-        <!-- Caveman Ninja Hardware family header (decoded in jtcninja_game.v).
-        byte 0 = game_id  (0=cninja/joemac, 1=cbuster, 2=darkseal/gatedoom)
-        byte 1 = gfx char-region end   (BA3 word offset >> 16, i.e. 64kB-word units)
-        byte 2 = gfx tiles1-region end
-        byte 3 = gfx tiles2-region end
-        byte 4 bit0 = tiles2 has ROM_CONTINUE (1MB cninja) vs single ROM (darkseal)
-        These let the gfx download remap use each game's real region sizes, so a
-        smaller region's trailing blob padding can't fold onto and overwrite the
-        real data. Bytes 5..15 reserved. See doc/HW_FAMILY.md. -->
+        <!-- 
+  0[0]: cninja     Caveman Ninja hardware
+  0[1]: cbust      Crude Buster hardware
+  0[2]: dseal      Dark Seal hardware
+  0[3]: vapor      Vapor Trail hardware
+  0[4]: edrndy     Edward Randy hardware -->
         <part>
-            03 01 05 05 00 00 00 00
+            08 00 00 00 00 00 00 00
             00 00 00 00 00 00 00 00
         </part>
         <!-- sprites1 - starts at 0x0 - length 0x100000 (20 bits) -->
-        <part name="vtmaa03.bin" crc="1a30bf81"/>
-        <part name="vtmaa04.bin" crc="b713e9cc"/>
+        <interleave output="32">
+            <part name="vtmaa03.bin" crc="1a30bf81" map="0021" length="0x80000"/>
+            <part name="vtmaa04.bin" crc="b713e9cc" map="2100" length="0x80000"/>
+        </interleave>
         <!-- SPR2_START -->
-        <!-- sprites1hi - starts at 0x100000 - length 0x100000 (20 bits) -->
-        <part repeat="0x100000"> FF</part>
-        <!-- JTFRAME_BA1_START -->
+        <!-- sprites1hi - starts at 0x100000 - length 0x400000 (22 bits) -->
+        <part repeat="0x400000"> FF</part>
+        <!-- SND_START -->
+        <!-- audiocpu - starts at 0x500000 - length 0x10000 (16 bits) -->
+        <part name="fj04" crc="e9aedf9b"/>
         <!-- GFX3_START -->
-        <!-- tiles2 - starts at 0x200000 - length 0x100000 (20 bits) -->
-        <part name="vtmaa02.bin" crc="091ff98e"/>
-        <part name="vtmaa01.bin" crc="c217a31b"/>
+        <!-- JTFRAME_BA1_START -->
+        <!-- tiles2 - starts at 0x510000 - length 0x100000 (20 bits) -->
+        <interleave output="32">
+            <part name="vtmaa02.bin" crc="091ff98e" map="0021" length="0x80000"/>
+            <part name="vtmaa01.bin" crc="c217a31b" map="2100" length="0x80000"/>
+        </interleave>
         <!-- JTFRAME_BA2_START -->
-        <!-- maincpu - starts at 0x300000 - length 0xD0000 (20 bits) -->
+        <!-- maincpu - starts at 0x610000 - length 0x100000 (20 bits) -->
         <interleave output="16">
             <part name="fl_00-1.bin" crc="c08cc048" map="01"/>
             <part name="fl_02-1.bin" crc="9ae36095" map="10"/>
@@ -66,32 +70,26 @@
             <part name="fl_01.bin" crc="9474b085" map="01"/>
             <part name="fl_03.bin" crc="80bd2844" map="10"/>
         </interleave>
-        <part repeat="0x50000"> FF</part>
+        <part repeat="0x80000"> FF</part>
         <!-- PCM_START -->
-        <!-- oki1 - starts at 0x3D0000 - length 0x40000 (18 bits) -->
+        <!-- oki1 - starts at 0x710000 - length 0x40000 (18 bits) -->
         <part name="fj06" crc="6e98a235"/>
         <part repeat="0x20000"> FF</part>
         <!-- PCM2_START -->
-        <!-- oki2 - starts at 0x410000 - length 0x80000 (19 bits) -->
+        <!-- oki2 - starts at 0x750000 - length 0x80000 (19 bits) -->
         <part name="fj05" crc="39cda2b5"/>
         <part repeat="0x60000"> FF</part>
-        <!-- GFX3_BA2_START -->
-        <!-- tiles2b - starts at 0x490000 - length 0x100000 (20 bits) -->
-        <part name="vtmaa02.bin" crc="091ff98e"/>
-        <part name="vtmaa01.bin" crc="c217a31b"/>
         <!-- JTFRAME_BA3_START -->
         <!-- GFX1_START -->
-        <!-- chars - starts at 0x590000 - length 0x20000 (17 bits) -->
-        <part name="vtmaa00.bin" crc="0330e13b" length="0x10000"/>
-        <part name="vtmaa00.bin" crc="0330e13b" length="0x10000" offset="0x40000"/>
+        <!-- chars - starts at 0x7D0000 - length 0x20000 (17 bits) -->
+        <interleave output="32">
+            <part name="vtmaa00.bin" crc="0330e13b" map="0021" length="0x10000"/>
+            <part name="vtmaa00.bin" crc="0330e13b" map="2100" length="0x10000" offset="0x40000"/>
+        </interleave>
         <!-- GFX2_START -->
-        <!-- tiles1 - starts at 0x5B0000 - length 0x80000 (19 bits) -->
+        <!-- tiles1 - starts at 0x7F0000 - length 0x80000 (19 bits) -->
         <part name="vtmaa00.bin" crc="0330e13b"/>
-        <!-- JTFRAME_PROM_START -->
-        <!-- audiocpu:snd - starts at 0x630000 -->
-        <!-- audiocpu - starts at 0x630000 - length 0x10000 (16 bits) -->
-        <part name="fj04" crc="e9aedf9b"/>
-        <!-- Total 0x640000 bytes - 6400 kBytes -->
+        <!-- Total 0x870000 bytes - 8640 kBytes -->
     </rom>
     <!-- Vertical screen. Orientation reversed. -->
     <rom index="1">

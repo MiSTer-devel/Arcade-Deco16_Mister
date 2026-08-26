@@ -22,14 +22,15 @@ localparam [25:0] BA3_START  =`ifdef JTFRAME_BA3_START  `JTFRAME_BA3_START  `els
 localparam [25:0] PROM_START =`ifdef JTFRAME_PROM_START `JTFRAME_PROM_START `else 26'd0 `endif;
 localparam [25:0] HEADER_LEN =`ifdef JTFRAME_HEADER     `JTFRAME_HEADER     `else 26'd0 `endif;
 localparam        SDRAMW     =`ifdef JTFRAME_SDRAM_XL 25 `elsif JTFRAME_SDRAM_LARGE 24 `else 23 `endif;
+localparam        IOCTL_AW   =`ifdef JTFRAME_SDRAM_XL 27 `else 26 `endif;
 /* verilator lint_on WIDTH */
 
 
-parameter PCM_OFFSET = (`PCM_START -`JTFRAME_BA2_START)>>1;
-parameter PCM2_OFFSET = (`PCM2_START-`JTFRAME_BA2_START)>>1;
-parameter GFX2_OFFSET = (`GFX2_START-`JTFRAME_BA3_START)>>1;
+parameter SND_OFFSET = (`SND_START                       )>>1;
+parameter PCM_OFFSET = (`PCM_START     -`JTFRAME_BA2_START)>>1;
+parameter PCM2_OFFSET = (`PCM2_START    -`JTFRAME_BA2_START)>>1;
 parameter GFX3_OFFSET = (`GFX3_START    -`JTFRAME_BA1_START)>>1;
-parameter GFX3B_OFFSET = (`GFX3_BA2_START-`JTFRAME_BA2_START)>>1;
+parameter GFX2_OFFSET = (`GFX2_START    -`JTFRAME_BA3_START)>>1;
 
 // Audio channels 
 wire signed [15:0] opn;
@@ -39,20 +40,51 @@ wire signed [13:0] pcm1;
 wire signed [13:0] pcm2;
 wire mute;
 // Additional ports
+wire [10:1] dma_addr;
+wire [15:0] work_dout;
+wire [10:1] objcpu_addr;
+wire [15:0] obj_dout;
+wire [1:0] dma_we;
+wire [15:0] oram2dma_data;
+wire [7:0] sndram_dout;
+wire  sndram_we;
+wire [12:1] pal_addr;
+wire [10:1] oram_addr;
+wire [1:0] work_we;
+wire [7:0] sndram_din;
+wire [15:0] oram_dout;
+wire [12:0] sndram_addr;
 wire [15:0] main_dout;
-wire [15:0] snd_addr;
-wire [7:0] snd_data;
+wire [15:0] pal_dout;
+wire [12:1] palrw_addr;
+wire [15:0] palrw_dout;
+wire [15:0] objram_dout;
+wire [1:0] objcpu_we;
 
 // BRAM buses
 
+wire    [1:0]palrw_we; // Dual port for palrw
+
+
+
+
+
+
+
 // SDRAM buses
 
-wire [20:2] objrom_addr;
+wire [22:2] objrom_addr;
 wire [31:0] objrom_data;
 wire        objrom_cs, objrom_ok;
+wire [15:0] snd_addr;
+wire [ 7:0] snd_data;
+wire        snd_cs, snd_ok;
 wire [19:2] scr2_addr;
 wire [31:0] scr2_data;
 wire        scr2_cs, scr2_ok;
+wire [19:2] scr3_addr;
+wire [31:0] scr3_data;
+wire        scr3_cs, scr3_ok;
 wire [19:1] main_addr;
 wire [15:0] main_data;
 wire        main_cs, main_ok;
@@ -62,9 +94,6 @@ wire        oki1_cs, oki1_ok;
 wire [18:0] oki2_addr;
 wire [ 7:0] oki2_data;
 wire        oki2_cs, oki2_ok;
-wire [19:2] scr3_addr;
-wire [31:0] scr3_data;
-wire        scr3_cs, scr3_ok;
 wire [16:2] char_addr;
 wire [31:0] char_data;
 wire        char_cs, char_ok;
@@ -74,15 +103,17 @@ wire        scr1_cs, scr1_ok;
 wire        prom_we, header;
 wire [SDRAMW-2:0] raw_addr, post_addr;
 wire [SDRAMW-2:0] ioctl_prog_addr   = ioctl_addr[SDRAMW-2:0];
-wire [25:0] pre_addr, dwnld_addr, ioctl_addr_noheader;
+wire [IOCTL_AW-1:0] pre_addr, dwnld_addr, ioctl_addr_noheader;
 wire [ 7:0] post_data;
 wire [15:0] raw_data;
 wire [ 7:0] pcb_id;
 wire        pass_io;
 // Clock enable signals
-wire cen6; 
-wire cen3; 
-wire cen1p5; 
+wire cen_snd; 
+wire cen_opn; 
+wire cen_opm; 
+wire cen_oki2; 
+wire cen_oki1; 
 wire gfx4_en, gfx8_en, gfx16_en, gfx16b_en, gfx16c_en, ioctl_dwn;
 
 assign pass_io = header | ioctl_ram;
@@ -130,9 +161,11 @@ jtcninja_game u_game(
     
     .snd_en         ( snd_en        ),
     .snd_vol        ( snd_vol       ),
-    .cen6    ( cen6    ), 
-    .cen3    ( cen3    ), 
-    .cen1p5    ( cen1p5    ), 
+    .cen_snd    ( cen_snd    ), 
+    .cen_opn    ( cen_opn    ), 
+    .cen_opm    ( cen_opm    ), 
+    .cen_oki2    ( cen_oki2    ), 
+    .cen_oki1    ( cen_oki1    ), 
 
     .pxl2_cen       ( pxl2_cen      ),
     .pxl_cen        ( pxl_cen       ),
@@ -167,19 +200,46 @@ jtcninja_game u_game(
     .dip_test       ( dip_test      ),
     .dip_fxlevel    ( dip_fxlevel   ),
     // Ports declared in mem.yaml
+    .dma_addr   ( dma_addr ),
+    .work_dout   ( work_dout ),
+    .objcpu_addr   ( objcpu_addr ),
+    .obj_dout   ( obj_dout ),
+    .dma_we   ( dma_we ),
+    .oram2dma_data   ( oram2dma_data ),
+    .sndram_dout   ( sndram_dout ),
+    .sndram_we   ( sndram_we ),
+    .pal_addr   ( pal_addr ),
+    .oram_addr   ( oram_addr ),
+    .work_we   ( work_we ),
+    .sndram_din   ( sndram_din ),
+    .oram_dout   ( oram_dout ),
+    .sndram_addr   ( sndram_addr ),
     .main_dout   ( main_dout ),
-    .snd_addr   ( snd_addr ),
-    .snd_data   ( snd_data ),
+    .pal_dout   ( pal_dout ),
+    .palrw_addr   ( palrw_addr ),
+    .palrw_dout   ( palrw_dout ),
+    .objram_dout   ( objram_dout ),
+    .objcpu_we   ( objcpu_we ),
     // Memory interface - SDRAM
     .objrom_addr ( objrom_addr ),
     .objrom_cs   ( objrom_cs   ),
     .objrom_ok   ( objrom_ok   ),
     .objrom_data ( objrom_data ),
     
+    .snd_addr ( snd_addr ),
+    .snd_cs   ( snd_cs   ),
+    .snd_ok   ( snd_ok   ),
+    .snd_data ( snd_data ),
+    
     .scr2_addr ( scr2_addr ),
     .scr2_cs   ( scr2_cs   ),
     .scr2_ok   ( scr2_ok   ),
     .scr2_data ( scr2_data ),
+    
+    .scr3_addr ( scr3_addr ),
+    .scr3_cs   ( scr3_cs   ),
+    .scr3_ok   ( scr3_ok   ),
+    .scr3_data ( scr3_data ),
     
     .main_addr ( main_addr ),
     .main_cs   ( main_cs   ),
@@ -196,11 +256,6 @@ jtcninja_game u_game(
     .oki2_ok   ( oki2_ok   ),
     .oki2_data ( oki2_data ),
     
-    .scr3_addr ( scr3_addr ),
-    .scr3_cs   ( scr3_cs   ),
-    .scr3_ok   ( scr3_ok   ),
-    .scr3_data ( scr3_data ),
-    
     .char_addr ( char_addr ),
     .char_cs   ( char_cs   ),
     .char_ok   ( char_ok   ),
@@ -213,6 +268,14 @@ jtcninja_game u_game(
     
     // Memory interface - BRAM
 
+    .palrw_we ( palrw_we ),  // Dual port for palrw
+    
+    
+    
+    
+    
+    
+    
 `ifdef JTFRAME_SRAM
     // SRAM
     .sram_addr  ( sram_addr     ),
@@ -243,7 +306,6 @@ jtcninja_game u_game(
     .prom_we      ( pass_io ? 1'b0 : prom_we ),
     // SDRAM address mapper during downloading
     .post_addr    ( post_addr      ),
-    .post_data    ( post_data      ),
 `ifdef JTFRAME_HEADER
     .header       ( header         ),
 `endif
@@ -273,6 +335,7 @@ jtcninja_game u_game(
     .ln_vs       ( ln_vs         ),
     .ln_lvbl     ( ln_lvbl       ),
     .ln_we       ( ln_we         ),
+    .fb_keep     ( fb_keep       ),
 `ifdef JTFRAME_LF_ZOOM
     .h_step      ( h_step        ),
     .v_step      ( v_step        ),
@@ -281,10 +344,15 @@ jtcninja_game u_game(
     .gfx_en      ( gfx_en        )
 );
 /* verilator tracing_off */
-assign dwnld_busy = ioctl_rom | prom_we; // prom_we is really just for sims
+assign dwnld_busy = ioctl_rom | prom_we | prog_we; // prom_we is really just for sims
 assign dwnld_addr = ioctl_addr;
+`ifdef JTFRAME_SDRAM_XL
+wire [26:0] dwnld_addr_wide = dwnld_addr;
+`else
+wire [26:0] dwnld_addr_wide = {1'b0,dwnld_addr};
+`endif
 assign prog_addr = post_addr;
-assign prog_data = {2{post_data}};
+assign prog_data = raw_data;
 assign gfx4_en   = 0;
 assign gfx8_en   = 0;
 assign gfx16_en  = 0;
@@ -315,7 +383,7 @@ jtframe_dwnld #(
 ) u_dwnld(
     .clk          ( clk            ),
     .ioctl_rom    ( ioctl_dwn      ),
-    .ioctl_addr   ( dwnld_addr     ),
+    .ioctl_addr   ( dwnld_addr_wide),
     .ioctl_dout   ( ioctl_dout     ),
     .ioctl_wr     ( ioctl_wr       ),
     .gfx4_en      ( gfx4_en        ),
@@ -345,13 +413,18 @@ jtframe_headerbyte #(.AW(6)) u_pcbid(
 `ifdef VERILATOR_KEEP_SDRAM /* verilator tracing_on */ `else /* verilator tracing_off */ `endif
 
 
-jtframe_rom_1slot #(
+jtframe_rom_2slots #(
     .SDRAMW(SDRAMW-1),
     // objrom
-    .SLOT0_AW(20),
-    .SLOT0_DW(32)
+    .SLOT0_AW(22),
+    .SLOT0_DW(32), 
+    // snd
+    .SLOT1_OFFSET(SND_OFFSET[SDRAMW-2:0]),
+    .SLOT1_AW(16),
+    .SLOT1_DW( 8)
 `ifdef JTFRAME_BA0_LEN
     ,.SLOT0_DOUBLE(1)
+    ,.SLOT1_DOUBLE(1)
 `endif
 ) u_bank0(
     .rst         ( rst        ),
@@ -361,6 +434,11 @@ jtframe_rom_1slot #(
     .slot0_dout  ( objrom_data  ),
     .slot0_cs    ( objrom_cs    ),
     .slot0_ok    ( objrom_ok    ),
+    
+    .slot1_addr  ( snd_addr  ),
+    .slot1_dout  ( snd_data  ),
+    .slot1_cs    ( snd_cs    ),
+    .slot1_ok    ( snd_ok    ),
     
     // SDRAM controller interface
     .sdram_ack   ( ba_ack[0]  ),
@@ -373,14 +451,19 @@ jtframe_rom_1slot #(
 assign ba_wr[0] = 0;
 assign ba0_din  = 0;
 assign ba0_dsn  = 3;
-jtframe_rom_1slot #(
+jtframe_rom_2slots #(
     .SDRAMW(SDRAMW-1),
     // scr2
     .SLOT0_OFFSET(GFX3_OFFSET[SDRAMW-2:0]),
     .SLOT0_AW(19),
-    .SLOT0_DW(32)
+    .SLOT0_DW(32), 
+    // scr3
+    .SLOT1_OFFSET(GFX3_OFFSET[SDRAMW-2:0]),
+    .SLOT1_AW(19),
+    .SLOT1_DW(32)
 `ifdef JTFRAME_BA1_LEN
     ,.SLOT0_DOUBLE(1)
+    ,.SLOT1_DOUBLE(1)
 `endif
 ) u_bank1(
     .rst         ( rst        ),
@@ -390,6 +473,11 @@ jtframe_rom_1slot #(
     .slot0_dout  ( scr2_data  ),
     .slot0_cs    ( scr2_cs    ),
     .slot0_ok    ( scr2_ok    ),
+    
+    .slot1_addr  ( { scr3_addr, 1'b0 } ),
+    .slot1_dout  ( scr3_data  ),
+    .slot1_cs    ( scr3_cs    ),
+    .slot1_ok    ( scr3_ok    ),
     
     // SDRAM controller interface
     .sdram_ack   ( ba_ack[1]  ),
@@ -402,7 +490,7 @@ jtframe_rom_1slot #(
 assign ba_wr[1] = 0;
 assign ba1_din  = 0;
 assign ba1_dsn  = 3;
-jtframe_rom_4slots #(
+jtframe_rom_3slots #(
     .SDRAMW(SDRAMW-1),
     // main
     .SLOT0_AW(19),
@@ -414,16 +502,11 @@ jtframe_rom_4slots #(
     // oki2
     .SLOT2_OFFSET(PCM2_OFFSET[SDRAMW-2:0]),
     .SLOT2_AW(19),
-    .SLOT2_DW( 8), 
-    // scr3
-    .SLOT3_OFFSET(GFX3B_OFFSET[SDRAMW-2:0]),
-    .SLOT3_AW(19),
-    .SLOT3_DW(32)
+    .SLOT2_DW( 8)
 `ifdef JTFRAME_BA2_LEN
     ,.SLOT0_DOUBLE(1)
     ,.SLOT1_DOUBLE(1)
     ,.SLOT2_DOUBLE(1)
-    ,.SLOT3_DOUBLE(1)
 `endif
 ) u_bank2(
     .rst         ( rst        ),
@@ -443,11 +526,6 @@ jtframe_rom_4slots #(
     .slot2_dout  ( oki2_data  ),
     .slot2_cs    ( oki2_cs    ),
     .slot2_ok    ( oki2_ok    ),
-    
-    .slot3_addr  ( { scr3_addr, 1'b0 } ),
-    .slot3_dout  ( scr3_data  ),
-    .slot3_cs    ( scr3_cs    ),
-    .slot3_ok    ( scr3_ok    ),
     
     // SDRAM controller interface
     .sdram_ack   ( ba_ack[2]  ),
@@ -502,47 +580,147 @@ assign hold_rst=0;
 `ifdef JTFRAME_PROM_START
 localparam JTFRAME_PROM_START=`JTFRAME_PROM_START;
 `endif
-// snd PROM
-wire [ 7:0]snd_dd;
-wire [15:0]snd_waddr;
-wire       snd_we;
 
-jtframe_ioctl_range #(
-    .AW(16),
-    .OFFSET(JTFRAME_PROM_START+'h0)
-) u_range_snd(
-    .clk        ( clk                ),
-    .addr       ( raw_addr           ),
-    .addr_rel   ( snd_waddr          ),
-    .en         ( prom_we            ),
-    .inrange    ( snd_we             ),
-    .din        ( raw_data[7:0]      ),
-    .dout       ( snd_dd             )
+// Dual port BRAM for pal and palrw
+jtframe_dual_ram16 #(
+    .AW(13-1),
+    .LATCH0_IN(0),
+    .LATCH0_OUT(0),
+    .LATCH1_IN(0),
+    .LATCH1_OUT(0),
+    .ENDIAN(1),
+    .SIMFILE("pal.bin")
+) u_bram_pal(
+    // Port 0 - pal
+    .clk0   ( clk ),
+    .addr0  ( pal_addr ),
+    .data0  ( 16'h0 ),
+    .we0    ( 2'd0 ),
+    .q0     ( pal_dout ),
+    // Port 1 - palrw
+    .clk1   ( clk ),
+    .data1  ( main_dout ),
+    .addr1  ( palrw_addr[12:1] ),
+    .we1    ( palrw_we  ),
+    .q1     ( palrw_dout )
+);
+// Dual port BRAM for objram and objcpu
+jtframe_dual_ram16 #(
+    .AW(11-1),
+    .LATCH0_IN(0),
+    .LATCH0_OUT(0),
+    .LATCH1_IN(0),
+    .LATCH1_OUT(0),
+    .ENDIAN(0)
+) u_bram_objram(
+    // Port 0 - objram
+    .clk0   ( clk ),
+    .addr0  ( dma_addr ),
+    .data0  ( 16'h0 ),
+    .we0    ( 2'd0 ),
+    .q0     ( objram_dout ),
+    // Port 1 - objcpu
+    .clk1   ( clk ),
+    .data1  ( main_dout ),
+    .addr1  ( objcpu_addr[10:1] ),
+    .we1    ( objcpu_we  ),
+    .q1     ( obj_dout )
+);
+// Dual port BRAM for oram and dma
+jtframe_dual_ram16 #(
+    .AW(11-1),
+    .LATCH0_IN(0),
+    .LATCH0_OUT(0),
+    .LATCH1_IN(0),
+    .LATCH1_OUT(0),
+    .ENDIAN(1),
+    .SIMFILE("oram.bin")
+) u_bram_oram(
+    // Port 0 - oram
+    .clk0   ( clk ),
+    .addr0  ( oram_addr ),
+    .data0  ( 16'h0 ),
+    .we0    ( 2'd0 ),
+    .q0     ( oram_dout ),
+    // Port 1 - dma
+    .clk1   ( clk ),
+    .data1  ( objram_dout ),
+    .addr1  ( dma_addr[10:1] ),
+    .we1    ( dma_we  ),
+    .q1     ( oram2dma_data )
+);
+// BRAM for work
+jtframe_ram16 #(
+    .AW(14-1),
+    .LATCH_IN(0),
+    .LATCH_OUT(0),
+    .ENDIAN(0)
+) u_bram_work(
+    .clk    ( clk  ),
+    .addr   ( main_addr[13:1] ),
+    .data   ( main_dout ),
+    .we     ( work_we ),
+    .q      ( work_dout )
 );
 
-jtframe_prom #(
-    .DW(8),
-    .AW(16)
-) u_prom_snd(
-    .clk        ( clk                ),
-    .cen        ( 1'b1               ),
-    .data       ( snd_dd[ 7:0]       ),
-    .rd_addr    ( snd_addr           ),
-    .wr_addr    ( snd_waddr          ),
-    .we         ( snd_we             ),
-    .q          ( snd_data           )
+// BRAM for sndram
+jtframe_ram #(
+    .AW(13),
+    .LATCH_IN(0),
+    .LATCH_OUT(0),
+    .DW(8)
+) u_bram_sndram(
+    .clk    ( clk  ),
+    .cen    ( 1'b1 ),
+    .addr   ( sndram_addr ),
+    .data   ( sndram_din ),
+    .we     ( sndram_we ),
+    .q      ( sndram_dout )
 );
 
 
 
 // Clock enable generation
-// 6000000 = 48000000*1/8 Hz from clk
+// 24000000 = 48000000*1/2 Hz from clk
 `ifdef VERILATOR_KEEP_CEN /* verilator tracing_on */ `else /* verilator tracing_off */ `endif
-jtframe_gated_cen #(.W(3),.NUM(1),.DEN(8),.MFREQ(48000)) u_cen0_clk(
+jtframe_gated_cen #(.W(1),.NUM(1),.DEN(2),.MFREQ(48000)) u_cen0_clk(
     .rst    ( rst          ),
     .clk    ( clk ),
     .busy   ( 1'b0    ),
-    .cen    ( { cen1p5, cen3, cen6 } ),
+    .cen    ( { cen_snd } ),
+    .fave   (              ),
+    .fworst (              )
+); /* verilator tracing_off */
+
+// 4027500 = 48000000*537/6400 Hz from clk
+`ifdef VERILATOR_KEEP_CEN /* verilator tracing_on */ `else /* verilator tracing_off */ `endif
+jtframe_gated_cen #(.W(1),.NUM(537),.DEN(6400),.MFREQ(48000)) u_cen1_clk(
+    .rst    ( rst          ),
+    .clk    ( clk ),
+    .busy   ( 1'b0    ),
+    .cen    ( { cen_opn } ),
+    .fave   (              ),
+    .fworst (              )
+); /* verilator tracing_off */
+
+// 3580000 = 48000000*179/2400 Hz from clk
+`ifdef VERILATOR_KEEP_CEN /* verilator tracing_on */ `else /* verilator tracing_off */ `endif
+jtframe_gated_cen #(.W(1),.NUM(179),.DEN(2400),.MFREQ(48000)) u_cen2_clk(
+    .rst    ( rst          ),
+    .clk    ( clk ),
+    .busy   ( 1'b0    ),
+    .cen    ( { cen_opm } ),
+    .fave   (              ),
+    .fworst (              )
+); /* verilator tracing_off */
+
+// 2013750 = 48000000*537/12800 Hz from clk
+`ifdef VERILATOR_KEEP_CEN /* verilator tracing_on */ `else /* verilator tracing_off */ `endif
+jtframe_gated_cen #(.W(2),.NUM(537),.DEN(12800),.MFREQ(48000)) u_cen3_clk(
+    .rst    ( rst          ),
+    .clk    ( clk ),
+    .busy   ( (oki1_cs & ~oki1_ok) | (oki2_cs & ~oki2_ok)    ),
+    .cen    ( { cen_oki1, cen_oki2 } ),
     .fave   (              ),
     .fworst (              )
 ); /* verilator tracing_off */
@@ -598,11 +776,11 @@ jtframe_rcmix #(
     .p3     ( 30'h00), // 0 Hz, 0 Hz 
     .p4     ( 30'h00), // 0 Hz, 0 Hz 
     .p5     ( 30'h0), 
-    .g0     ( 8'h38 ), // 0.44  opn
-    .g1     ( 8'h47 ), // 0.55  psg
-    .g2     ( 8'h2E ), // 0.36  opm
+    .g0     ( 8'h19 ), // 0.20  opn
+    .g1     ( 8'h20 ), // 0.25  psg
+    .g2     ( 8'h14 ), // 0.16  opm
     .g3     ( 8'h80 ), // 1.00  pcm1
-    .g4     ( 8'h70 ), // 0.88  pcm2
+    .g4     ( 8'h75 ), // 0.91  pcm2
     .g5     ( 8'h00 ), // 0.00 
     .gain   ( snd_vol   ),
     .mixed  ( snd       ),

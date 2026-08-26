@@ -6,7 +6,7 @@
     Sound crystal 32.220 MHz:
       HuC6280 (H6280)  @ /8  = 4.0275 MHz   (modules/HUC6280, full 21-bit MMU map)
       YM2203  (jt03)   @ /8  = 4.0275 MHz   -> opn + psg
-      YM2151  (jt51)   @ /9  = 3.58   MHz   -> opm_l/opm_r, IRQ -> H6280 IRQ2
+      YM2151 (ikaopm)  @ /9  = 3.58   MHz   -> opm_l/opm_r, IRQ -> H6280 IRQ2
       MSM6295 (jt6295) @ /32 = 1.0069 MHz   -> pcm1  (oki1, 256kB)
       MSM6295 (jt6295) @ /16 = 2.0138 MHz   -> pcm2  (oki2, 512kB, banked by YM2151 CT)
 
@@ -25,25 +25,31 @@
 module jtcninja_snd(
     input             rst,
     input             clk,
-    input             cen_opn,    // YM2203 / HuC6280 ~4MHz
+    input             cen_snd,    // HuC6280 CLK input (6x the CPU rate)
+    input             cen_opn,    // YM2203 4.0275MHz
     input             cen_opm,    // YM2151 ~3.58MHz
     input             cen_oki1,   // ~1MHz
     input             cen_oki2,   // ~2MHz
-    input             dseal,      // game_id==2: darkseal OKI2 is 256kB, NOT banked
+    input             dseal,      // Dark Seal OKI2 is 256kB, NOT banked
     // From main CPU via DECO 104
     input      [ 7:0] latch,
     input             snd_irq,    // 1-clk pulse on soundlatch write
-    // Program ROM (BA1)
+    // Work RAM 0x1f0000-0x1f1fff (mem.yaml bram: sndram)
+    output     [12:0] sndram_addr,
+    output     [ 7:0] sndram_din,
+    output            sndram_we,
+    input      [ 7:0] sndram_dout,
+    // Program ROM (BA0)
     output     [15:0] rom_addr,
     output reg        rom_cs,
     input      [ 7:0] rom_data,
     input             rom_ok,
-    // OKI #1 sample ROM (BA1)
+    // OKI #1 sample ROM (BA2)
     output     [17:0] oki1_addr,
     output            oki1_cs,
     input      [ 7:0] oki1_data,
     input             oki1_ok,
-    // OKI #2 sample ROM (BA1)
+    // OKI #2 sample ROM (BA2)
     output     [18:0] oki2_addr,
     output            oki2_cs,
     input      [ 7:0] oki2_data,
@@ -62,8 +68,6 @@ wire [ 7:0] dout, opn_dout, opm_dout, oki1_dout, oki2_dout;
 reg  [ 7:0] din;
 wire        wrn, rdn, SX;
 wire        ce, cek_n, ce7_n, cer_n;
-wire        ram_we;
-wire [ 7:0] ram_dout;
 reg         rom_good;
 reg         ram_cs, opn_cs, opm_cs, oki1_dev, oki2_dev, latch_cs;
 wire        opn_irqn, opm_irqn;
@@ -71,17 +75,16 @@ reg         irq1;
 wire        oki1_wrn = ~(oki1_dev & ~wrn);
 wire        oki2_wrn = ~(oki2_dev & ~wrn);
 
-// HuC6280 clock gating: the core makes its own internal cen (~6.89MHz for a
-// 48MHz clk); gating by 3 lands near the real ~4MHz and gives din time to settle
-// (see midres note / jtcores #198).
-reg  [1:0] cencnt;
-reg        hu_cen;
-wire       hu_clk = clk & hu_cen;
-always @(posedge clk)  cencnt <= cencnt==2 ? 2'd0 : cencnt+2'd1;
-always @(negedge clk)  hu_cen <= cencnt==0;
+// HuC6280 gated clock. cen_snd is generated in mem.yaml (gated on the snd ROM);
+// latching it on the negedge keeps hu_clk glitch-free.
+reg  hu_cen;
+wire hu_clk = clk & hu_cen;
+always @(negedge clk) hu_cen <= cen_snd;
 
 assign rom_addr = A[15:0];
-assign ram_we   = ram_cs & ~wrn;
+assign sndram_we   = ram_cs & ~wrn;
+assign sndram_addr = A[12:0];
+assign sndram_din  = dout;
 assign oki1_cs  = 1'b1;     // jt6295 fetches ROM continuously
 assign oki2_cs  = 1'b1;
 
@@ -108,7 +111,7 @@ end
 
 always @(posedge clk) begin
     rom_good <= !rom_cs || rom_ok;
-    din <= ram_cs   ? ram_dout  :
+    din <= ram_cs   ? sndram_dout :
            opn_cs   ? opn_dout  :
            opm_cs   ? opm_dout  :
            oki1_dev ? oki1_dout :
@@ -127,10 +130,6 @@ always @(posedge clk, posedge rst) begin
     end
 end
 
-jtframe_ram #(.AW(13)) u_ram(    // 8kB work RAM @ 0x1f0000
-    .clk ( clk      ), .cen( 1'b1 ),
-    .data( dout     ), .addr( A[12:0] ), .we( ram_we ), .q( ram_dout )
-);
 
 HUC6280 u_huc(
     .CLK    ( hu_clk   ),
@@ -188,15 +187,15 @@ jt03 u_2203(
 );
 
 // ---- YM2151 (stereo); CT1 banks OKI2 ----
+// IKAOPM, the gate-accurate YM2151. cen_opm is phiM (xtal/9 = 3.58 MHz), the
+// same rate jt51 took, and the wrapper inverts it into i_phiM_PCEN_n.
 wire ym_ct1, ym_ct2;
-reg  cen_opm_p1;
-always @(posedge clk) if(cen_opm) cen_opm_p1 <= ~cen_opm_p1;
-jt51 u_2151(
+jtikaopm u_2151(
     .rst    ( rst      ),
     .clk    ( clk      ),
     .cen    ( cen_opm  ),
-    .cen_p1 ( cen_opm & cen_opm_p1 ),
     .cs_n   ( ~opm_cs  ),
+    .rd_n   ( rdn      ),
     .wr_n   ( wrn      ),
     .a0     ( A[0]     ),
     .din    ( dout     ),
@@ -204,11 +203,8 @@ jt51 u_2151(
     .ct1    ( ym_ct1   ),
     .ct2    ( ym_ct2   ),
     .irq_n  ( opm_irqn ),
-    .sample (          ),
-    .left   (          ),
-    .right  (          ),
-    .xleft  ( opm_l    ),
-    .xright ( opm_r    )
+    .left   ( opm_l    ),
+    .right  ( opm_r    )
 );
 
 // ---- OKI #1 (256kB) ----

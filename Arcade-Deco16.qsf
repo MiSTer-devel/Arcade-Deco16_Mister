@@ -55,7 +55,6 @@ set_global_assignment -name VERILOG_MACRO "JTFRAME_BUTTONS=3"
 set_global_assignment -name VERILOG_MACRO "JTFRAME_COLORW=8"
 set_global_assignment -name VERILOG_MACRO "JTFRAME_WIDTH=256"
 set_global_assignment -name VERILOG_MACRO "JTFRAME_HEIGHT=240"
-set_global_assignment -name VERILOG_MACRO "JTFRAME_CLK24=1"
 set_global_assignment -name VERILOG_MACRO "JTFRAME_PXLCLK=6"
 set_global_assignment -name VERILOG_MACRO "JTFRAME_STATUS=1"
 set_global_assignment -name VERILOG_MACRO "JTFRAME_DIPBASE=16"
@@ -68,20 +67,23 @@ set_global_assignment -name VERILOG_MACRO "JTFRAME_ARY=3"
 # framebuffer readout so emu.sv's screen_rotate can rotate the vertical games
 # (vaportra, ROT270). Horizontal games leave FB_EN=0 -> normal scandoubler path.
 set_global_assignment -name VERILOG_MACRO "MISTER_FB=1"
-# SDRAM bank layout (byte addresses, decimal == macros.def hex):
-#   BA0=sprites(2MB)  BA1=0x200000  BA2=0x300000  BA3=0x590000
-#   GFX3(scr)=0x200000 in BA1, copy2 GFX3_BA2=0x490000 in BA2
-#   PCM=0x3D0000  PCM2=0x410000  GFX1(char)=0x590000  GFX2(scr1)=0x5B0000  PROM=0x630000
-set_global_assignment -name VERILOG_MACRO "JTFRAME_BA1_START=2097152"
-set_global_assignment -name VERILOG_MACRO "JTFRAME_BA2_START=3145728"
-set_global_assignment -name VERILOG_MACRO "PCM_START=3997696"
-set_global_assignment -name VERILOG_MACRO "PCM2_START=4259840"
-set_global_assignment -name VERILOG_MACRO "JTFRAME_BA3_START=5832704"
-set_global_assignment -name VERILOG_MACRO "GFX1_START=5832704"
-set_global_assignment -name VERILOG_MACRO "GFX2_START=5963776"
-set_global_assignment -name VERILOG_MACRO "GFX3_START=2097152"
-set_global_assignment -name VERILOG_MACRO "GFX3_BA2_START=4784128"
-set_global_assignment -name VERILOG_MACRO "JTFRAME_PROM_START=6488064"
+# SDRAM bank layout (byte addresses, decimal == macros.def hex). BA0 and the
+# BA2 68k slot are sized for the biggest family member, edrandy:
+#   BA0 = sprite gfx (5MB) + HuC6280 program at SND=0x500000
+#   BA1 = 0x510000  tiles2 (GFX3, both tilegen1 playfields)
+#   BA2 = 0x610000  68k program (1MB) + OKI#1 0x710000 + OKI#2 0x750000
+#   BA3 = 0x7D0000  chars (GFX1) + tiles1 (GFX2) at 0x7F0000
+# No PROM region any more, so JTFRAME_PROM_START is left undefined (the RTL
+# only reads it behind `ifdef). GFX3_BA2_START is gone with the BA2 tile copy.
+set_global_assignment -name VERILOG_MACRO "SND_START=5242880"
+set_global_assignment -name VERILOG_MACRO "JTFRAME_BA1_START=5308416"
+set_global_assignment -name VERILOG_MACRO "GFX3_START=5308416"
+set_global_assignment -name VERILOG_MACRO "JTFRAME_BA2_START=6356992"
+set_global_assignment -name VERILOG_MACRO "PCM_START=7405568"
+set_global_assignment -name VERILOG_MACRO "PCM2_START=7667712"
+set_global_assignment -name VERILOG_MACRO "JTFRAME_BA3_START=8192000"
+set_global_assignment -name VERILOG_MACRO "GFX1_START=8192000"
+set_global_assignment -name VERILOG_MACRO "GFX2_START=8323072"
 
 # SDRAM read-data capture edge. jtframe's MiSTer (DE10) target uses SHIFT=1 /
 # 180SHIFT=0 -> SDRAM_SHIFT = 1^^0 = 1 (confirmed via `jtframe cfgstr cninja

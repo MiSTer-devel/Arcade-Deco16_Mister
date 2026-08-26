@@ -6,7 +6,10 @@
     output    [ 1:0]  sram_dsn,
     input             sram_ok,
 `endif
-    input cen1p5, cen3, cen6, // 6000000 = 48000000*1/8 Hz 
+    input cen_snd, // 24000000 = 48000000*1/2 Hz 
+    input cen_opn, // 4027500 = 48000000*537/6400 Hz 
+    input cen_opm, // 3580000 = 48000000*179/2400 Hz 
+    input cen_oki1, cen_oki2, // 2013750 = 48000000*537/12800 Hz 
 
     // Audio channels
     
@@ -26,7 +29,11 @@
     input   [ 7:0]  prog_data,
     input           prog_we,
     input   [ 1:0]  prog_ba,
+`ifdef JTFRAME_SDRAM_XL
+    input   [26:0]  ioctl_addr,
+`else
     input   [25:0]  ioctl_addr,
+`endif
     input           prom_we,
 `ifdef JTFRAME_SDRAM_XL
     output reg [23:0] post_addr,
@@ -35,8 +42,6 @@
 `else
     output reg [21:0] post_addr,
 `endif
-
-    output reg [ 7:0] post_data,
 
 `ifdef JTFRAME_HEADER
     input           header,
@@ -48,22 +53,54 @@
     input           ioctl_ram,
     input           ioctl_cart,
     // Explicit ports
+    output   [10:1] dma_addr,
+    input   [15:0] work_dout,
+    output   [10:1] objcpu_addr,
+    input   [15:0] obj_dout,
+    output   [1:0] dma_we,
+    input   [15:0] oram2dma_data,
+    input   [7:0] sndram_dout,
+    output    sndram_we,
+    output   [12:1] pal_addr,
+    output   [10:1] oram_addr,
+    output   [1:0] work_we,
+    output   [7:0] sndram_din,
+    input   [15:0] oram_dout,
+    output   [12:0] sndram_addr,
     output   [15:0] main_dout,
-    output   [15:0] snd_addr,
-    input   [7:0] snd_data,
+    input   [15:0] pal_dout,
+    output   [12:1] palrw_addr,
+    input   [15:0] palrw_dout,
+    input   [15:0] objram_dout,
+    output   [1:0] objcpu_we,
     // Buses to BRAM
 
+    output   [ 1:0] palrw_we, // Dual port for palrw
+    
+    
+    
+    
     
     // Buses to SDRAM
     input    [31:0] objrom_data,
     output          objrom_cs,
-    output   [20:2] objrom_addr,
+    output   [22:2] objrom_addr,
     input           objrom_ok,
+
+    input    [ 7:0] snd_data,
+    output          snd_cs,
+    output   [15:0] snd_addr,
+    input           snd_ok,
 
     input    [31:0] scr2_data,
     output          scr2_cs,
     output   [19:2] scr2_addr,
     input           scr2_ok,
+
+    input    [31:0] scr3_data,
+    output          scr3_cs,
+    output   [19:2] scr3_addr,
+    input           scr3_ok,
 
     input    [15:0] main_data,
     output          main_cs,
@@ -79,11 +116,6 @@
     output          oki2_cs,
     output   [18:0] oki2_addr,
     input           oki2_ok,
-
-    input    [31:0] scr3_data,
-    output          scr3_cs,
-    output   [19:2] scr3_addr,
-    input           scr3_ok,
 
     input    [31:0] char_data,
     output          char_cs,

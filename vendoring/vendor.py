@@ -38,7 +38,7 @@ MODULE_ROOTS = {
     "jtframe": "modules/jtframe/hdl",
     "jt12":    "modules/jt12/hdl",
     "jt49":    "modules/jt12/jt49/hdl",
-    "jt51":    "modules/jt51/hdl",
+    "ikaopm":  "modules/ikaopm/hdl",
     "jt6295":  "modules/jt6295/hdl",
     "fx68k":   "modules/fx68k/hdl",
     "huc6280": "modules/HUC6280/hdl",
@@ -276,6 +276,36 @@ def main():
             n_chg += 1
             print(("would update " if a.check else "updated ") + rel + "  <- " +
                   os.path.relpath(src, jtroot if src.startswith(jtroot) else build))
+            if not a.check:
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(src, dst)
+    # The core's `include`/$readmemh COMPANIONS (jt<core>_*.inc, *.hex) are consumed
+    # by name through SEARCH_PATH rtl/<core>, never as a files.qip FILE assignment,
+    # so the manifest loop above can't see them. Carry every .inc/.hex sitting in
+    # cores/<core>/hdl - e.g. jtcninja_decoder_ports.inc (included by each of the
+    # per-game DECO 104/146 decoders) and the deco104/deco146 permutation tables.
+    # Generated companions (mem_ports.inc, fir_*.hex) don't live there, so they are
+    # untouched by this and stay owned by --build.
+    # rtl/jtframe/inc/*.inc are the same story: jtframe_game_ports.inc and
+    # friends declare the ports of jt<core>_game / jt<core>_game_sdram, so a
+    # stale copy silently disagrees with the game_sdram the build generated.
+    COMPANIONS = [("rtl/%s" % core, "cores/%s/hdl" % core),
+                  ("rtl/jtframe/inc", "modules/jtframe/hdl/inc")]
+    for dstdir, srcdir in COMPANIONS:
+        sd = os.path.join(jtroot, srcdir)
+        if not os.path.isdir(sd): continue
+        for fn in sorted(os.listdir(sd)):
+            if os.path.splitext(fn)[1] not in (".inc", ".hex"): continue
+            src, dst = os.path.join(sd, fn), os.path.join(here, dstdir, fn)
+            if not os.path.isfile(src): continue
+            # only refresh companions this repo already hosts, except for the
+            # core's own dir where a NEW .inc/.hex is a real addition
+            if not os.path.isfile(dst) and dstdir != "rtl/%s" % core: continue
+            if os.path.isfile(dst) and open(src,'rb').read()==open(dst,'rb').read():
+                n_ok += 1; continue
+            n_chg += 1
+            print(("would update " if a.check else "updated ") + dstdir+"/"+fn +
+                  "  <- " + srcdir+"/"+fn)
             if not a.check:
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 shutil.copy2(src, dst)

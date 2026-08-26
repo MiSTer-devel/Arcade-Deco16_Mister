@@ -6,7 +6,11 @@
     output    [ 1:0]  sram_dsn,
     input             sram_ok,
 `endif
+`ifdef JTFRAME_SDRAM_XL
+    input   [26:0]  ioctl_addr,
+`else
     input   [25:0]  ioctl_addr,
+`endif
     input   [ 7:0]  ioctl_dout,
     input           ioctl_wr,
     input           ioctl_rom,
@@ -17,14 +21,18 @@
     output          dwnld_busy,
     input   [15:0]  data_read,
     input           ioctl_cart,
-    `ifdef JTFRAME_SDRAM_LARGE
+    `ifdef JTFRAME_SDRAM_XL
+        output [23:0]
+    `elsif JTFRAME_SDRAM_LARGE
         output [22:0]
     `else
         output [21:0]
     `endif
         ba0_addr, ba1_addr, ba2_addr, ba3_addr,
 `ifdef JTFRAME_SDRAM_CACHE
-    `ifdef JTFRAME_SDRAM_LARGE
+    `ifdef JTFRAME_SDRAM_XL
+        output [23:0]
+    `elsif JTFRAME_SDRAM_LARGE
         output [22:0]
     `else
         output [21:0]
@@ -47,7 +55,9 @@
     output          prog_we,
     output          prog_rd,
     output  [ 1:0]  prog_mask,
-    `ifdef JTFRAME_SDRAM_LARGE
+    `ifdef JTFRAME_SDRAM_XL
+        output [23:0]
+    `elsif JTFRAME_SDRAM_LARGE
         output [22:0] `else output [21:0]
     `endif
                     prog_addr,  // no comma here, end of port list

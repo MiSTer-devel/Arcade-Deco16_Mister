@@ -1,19 +1,6 @@
-/*  This file is part of JTFRAME.
-    JTFRAME program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    JTFRAME program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with JTFRAME.  If not, see <http://www.gnu.org/licenses/>.
-
-    Author: Jose Tejada Gomez. Twitter: @topapate
-    Date: 20-3-2026 */
+/* SPDX-FileCopyrightText: 2026 Jose Tejada Gomez
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Date: 20-3-2026 */
 
 `ifndef JTFRAME_180SHIFT
 `define JTFRAME_180SHIFT 0
@@ -157,24 +144,16 @@ localparam
     HF = 0;
 `endif
 
-wire [1:0] rfsh;
-wire       rfsh_g;
+wire rfsh, nc_rfsh;
 
 // Automatic JTFRAME macros set a 64us refresh period
 jtframe_frac_cen #(.WC(`JTFRAME_RFSH_WC)) u_rfsh(
     .clk    ( clk               ),
     .n      ( `JTFRAME_RFSH_N   ),
     .m      ( `JTFRAME_RFSH_M   ),
-    .cen    ( rfsh              ),
+    .cen    ( {nc_rfsh, rfsh }  ),
     .cenb   (                   )
 );
-
-`ifdef SIMULATION
-// ROM loading can drive the programmer path too quickly for refreshes.
-assign rfsh_g = !prog_en & rfsh[0];
-`else
-assign rfsh_g = rfsh[0];
-`endif
 
 `ifdef JTFRAME_SDRAM_CACHE
     assign ba_ack    = 4'd0;
@@ -215,7 +194,7 @@ assign rfsh_g = rfsh[0];
         .prog_rdy   ( prog_rdy      ),
         .prog_ack   ( prog_ack      ),
 
-        .rfsh       ( rfsh_g        ),
+        .rfsh       ( rfsh          ),
 
         .sdram_dq   ( sdram_dq      ),
 `ifdef VERILATOR
@@ -320,7 +299,7 @@ assign rfsh_g = rfsh[0];
         .sdram_cke  ( sdram_cke     ),
 
         .dout       ( dout          ),
-        .rfsh       ( rfsh_g        )
+        .rfsh       ( rfsh          )
     );
 `ifdef SIMULATION
     jtframe_romrq_rdy_check u_rdy_check(
