@@ -1,0 +1,42 @@
+name: Update sys
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-sys:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The canonical sys/ framework lives in the org's Template_MiSTer repo.
+      - name: Check out Template_MiSTer sys folder
+        uses: actions/checkout@v4
+        with:
+          repository: MiSTer-devel/Template_MiSTer
+          path: template
+          sparse-checkout: sys
+          sparse-checkout-cone-mode: true
+
+      # Mirror the template's sys/ over ours (removes files the template dropped).
+      - name: Replace sys with the template copy
+        run: |
+          TEMPLATE_SHA=$(git -C template rev-parse --short HEAD)
+          echo "TEMPLATE_SHA=${TEMPLATE_SHA}" >> "$GITHUB_ENV"
+          rsync -a --delete template/sys/ sys/
+
+      - name: Commit and push if changed
+        run: |
+          git add -A sys
+          if git diff --cached --quiet; then
+            echo "sys is already up to date with Template_MiSTer@${TEMPLATE_SHA}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update sys from Template_MiSTer@${TEMPLATE_SHA}"
+          git push
